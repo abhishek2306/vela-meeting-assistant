@@ -21,6 +21,53 @@
 
 ---
 
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    subgraph "User Layer"
+        User["User (Web Browser)"]
+    end
+
+    subgraph "Application Layer (Next.js)"
+        UI["React Dashboard / Chatbot"]
+        Auth["NextAuth (Google OAuth)"]
+        ChatAPI["/api/chat (Command Router)"]
+        Webhook["/api/webhooks/bot"]
+    end
+
+    subgraph "Intelligence & Automation"
+        Gemini["Gemini AI (Failover Logic)"]
+        BotRunner["Puppeteer Bot Runner"]
+    end
+
+    subgraph "Data & Integrations"
+        DB[("SQLite (Prisma)")]
+        GCal["Google Calendar API"]
+        GPeople["Google People API"]
+        GGmail["Gmail API"]
+    end
+
+    %% Flow connections
+    User <--> UI
+    UI <--> ChatAPI
+    ChatAPI <--> Gemini
+    ChatAPI --> GCal
+    ChatAPI --> GPeople
+    ChatAPI --> GGmail
+    ChatAPI --> BotRunner
+    
+    BotRunner -- "POST Transcript" --> Webhook
+    Webhook --> Gemini
+    Webhook --> DB
+    
+    UI --> DB
+    ChatAPI --> DB
+    Auth --> User
+```
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
