@@ -1,65 +1,150 @@
-import Image from "next/image";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { getUpcomingEvents } from "@/lib/google-api";
+import { Chatbot } from "@/components/Chatbot";
+import { Calendar, Video, Clock, Zap } from "lucide-react";
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession(authOptions);
+
+  let events: any[] = [];
+  let error: string | null = null;
+
+  if (session && (session as any).accessToken) {
+    try {
+      events = await getUpcomingEvents((session as any).accessToken, 8);
+    } catch (e: any) {
+      error = "Could not fetch calendar. Please ensure Calendar API is enabled.";
+    }
+  }
+
+  const cardStyle = {
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    backdropFilter: "blur(16px)",
+    WebkitBackdropFilter: "blur(16px)",
+    borderRadius: "20px",
+    padding: "28px",
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div>
+      {!session ? (
+        /* ── Landing / Sign-in State ── */
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", textAlign: "center", gap: "2rem" }}>
+          {/* Hero glow */}
+          <div style={{
+            width: "120px", height: "120px", borderRadius: "30px",
+            background: "linear-gradient(135deg, #6c63ff, #a78bfa)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 0 60px rgba(108,99,255,0.5), 0 0 120px rgba(108,99,255,0.2)",
+            marginBottom: "8px",
+          }}>
+            <Zap style={{ width: "52px", height: "52px", color: "#fff" }} />
+          </div>
+
+          <div>
+            <h1 style={{ fontSize: "3.5rem", fontWeight: 800, margin: 0, lineHeight: 1.1, background: "linear-gradient(135deg, #f0f4ff 0%, #a78bfa 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: "-2px" }}>
+              Meet smarter<br />with Vela
+            </h1>
+            <p style={{ color: "rgba(240,244,255,0.5)", fontSize: "1.1rem", marginTop: "16px", maxWidth: "440px", lineHeight: 1.6 }}>
+              Your AI co-pilot for meetings. Schedule, join, and capture minutes — all through natural conversation.
+            </p>
+          </div>
+
+          {/* Feature pills */}
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center" }}>
+            {["Auto-Schedule", "Smart Contact Lookup", "Meeting Cancellation", "MoM Generation"].map(f => (
+              <span key={f} style={{
+                padding: "6px 16px", borderRadius: "999px", fontSize: "0.8rem", fontWeight: 500,
+                background: "rgba(108,99,255,0.12)", border: "1px solid rgba(108,99,255,0.3)",
+                color: "#a78bfa"
+              }}>{f}</span>
+            ))}
+          </div>
+
+          <p style={{ color: "rgba(240,244,255,0.35)", fontSize: "0.875rem" }}>
+            Click <strong style={{ color: "rgba(167,139,250,0.7)" }}>Sign In with Google</strong> in the top right to get started.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      ) : (
+        /* ── Main Dashboard ── */
+        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: "24px", alignItems: "start" }}>
+
+          {/* ── Sidebar: Upcoming Meetings ── */}
+          <div style={cardStyle}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+              <div style={{ background: "rgba(108,99,255,0.15)", borderRadius: "8px", padding: "6px" }}>
+                <Calendar style={{ width: "16px", height: "16px", color: "#a78bfa" }} />
+              </div>
+              <h2 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "rgba(240,244,255,0.9)" }}>Upcoming Meetings</h2>
+            </div>
+
+            {error && (
+              <p style={{ color: "#f87171", fontSize: "0.8rem", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: "10px", padding: "10px 14px" }}>
+                {error}
+              </p>
+            )}
+
+            {events.length === 0 && !error ? (
+              <div style={{ textAlign: "center", padding: "32px 16px" }}>
+                <Calendar style={{ width: "32px", height: "32px", color: "rgba(240,244,255,0.15)", margin: "0 auto 12px" }} />
+                <p style={{ color: "rgba(240,244,255,0.3)", fontSize: "0.8rem", margin: 0 }}>No upcoming events</p>
+              </div>
+            ) : (
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                {events.map((event) => {
+                  const start = new Date(event.start?.dateTime || event.start?.date);
+                  const isToday = start.toDateString() === new Date().toDateString();
+                  return (
+                    <li key={event.id} style={{
+                      padding: "12px 14px",
+                      borderRadius: "12px",
+                      background: isToday ? "rgba(108,99,255,0.1)" : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${isToday ? "rgba(108,99,255,0.25)" : "rgba(255,255,255,0.06)"}`,
+                      cursor: "default"
+                    }}>
+                      <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600, color: "rgba(240,244,255,0.9)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={event.summary}>
+                        {event.summary || "Untitled Event"}
+                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "4px" }}>
+                        <Clock style={{ width: "11px", height: "11px", color: "rgba(240,244,255,0.3)" }} />
+                        <p style={{ margin: 0, fontSize: "0.72rem", color: "rgba(240,244,255,0.4)" }}>
+                          {start.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                        {isToday && <span style={{ marginLeft: "auto", fontSize: "0.65rem", fontWeight: 600, color: "#a78bfa", background: "rgba(108,99,255,0.2)", padding: "1px 7px", borderRadius: "999px" }}>Today</span>}
+                      </div>
+                      {event.hangoutLink && (
+                        <a
+                          href={event.hangoutLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: "5px",
+                            marginTop: "8px", fontSize: "0.72rem", fontWeight: 600,
+                            color: "#a78bfa", background: "rgba(108,99,255,0.15)",
+                            border: "1px solid rgba(108,99,255,0.3)",
+                            padding: "3px 10px", borderRadius: "6px", textDecoration: "none"
+                          }}
+                        >
+                          <Video style={{ width: "11px", height: "11px" }} />
+                          Join Meet
+                        </a>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* ── Main: Chatbot ── */}
+          <div>
+            <Chatbot />
+          </div>
+
         </div>
-      </main>
+      )}
     </div>
   );
 }
