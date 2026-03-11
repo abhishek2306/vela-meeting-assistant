@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { generateMoM } from "@/lib/gemini";
-
-const prisma = new PrismaClient();
 
 // This is the endpoint where our Bot Runner will POST the final transcript
 export async function POST(req: Request) {
