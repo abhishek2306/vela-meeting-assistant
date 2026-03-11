@@ -22,7 +22,45 @@ export async function getUpcomingEvents(accessToken: string, maxResults = 10) {
     const response = await calendar.events.list({
         calendarId: "primary",
         timeMin: new Date().toISOString(),
-        maxResults: maxResults,
+        maxResults: maxResults * 2, // Fetch more to allow for filtering
+        singleEvents: true,
+        orderBy: "startTime",
+    });
+
+    const events = response.data.items || [];
+
+    // Filter out all-day events (no dateTime) and common clutter
+    const filtered = events.filter(event => {
+        // 1. Must have a specific time (not all-day)
+        if (!event.start?.dateTime) return false;
+
+        // 2. Filter out birthdays and anniversaries by title
+        const summary = (event.summary || "").toLowerCase();
+        if (summary.includes("birthday") || summary.includes("anniversary")) return false;
+
+        return true;
+    });
+
+    return filtered.slice(0, maxResults);
+}
+
+
+/**
+ * Fetches calendar events that ended in the last N hours.
+ * Used by the transcript sync job to find recently concluded meetings.
+ */
+export async function getPastEvents(accessToken: string, hoursBack: number = 24) {
+    const auth = getGoogleAuthClient(accessToken);
+    const calendar = google.calendar({ version: "v3", auth });
+
+    const now = new Date();
+    const since = new Date(now.getTime() - hoursBack * 60 * 60 * 1000);
+
+    const response = await calendar.events.list({
+        calendarId: "primary",
+        timeMin: since.toISOString(),
+        timeMax: now.toISOString(),
+        maxResults: 20,
         singleEvents: true,
         orderBy: "startTime",
     });
@@ -160,6 +198,54 @@ export async function cancelMeeting(
     });
 
     return eventToCancel.summary || "Meeting";
+}
+
+/**
+ * Fetches a list of the user's top contacts (names and emails).
+ */
+export async function listContacts(accessToken: string, maxResults = 250): Promise<Array<{ name: string; email: string }>> {
+    const auth = getGoogleAuthClient(accessToken);
+    const people = google.people({ version: "v1", auth });
+
+    const allContactsMap = new Map<string, string>();
+
+    // 1. Fetch saved Connections
+    try {
+        const response = await people.people.connections.list({
+            resourceName: 'people/me',
+            pageSize: maxResults,
+            personFields: 'names,emailAddresses',
+        });
+        (response.data.connections || []).forEach(person => {
+            const email = person.emailAddresses?.[0]?.value;
+            const name = person.names?.[0]?.displayName || "Unknown";
+            if (email) allContactsMap.set(email.toLowerCase(), name);
+        });
+    } catch (e: any) {
+        console.error("Error listing connections:", e?.message);
+    }
+
+    // 2. Fetch "Other Contacts" (frequency/history based)
+    try {
+        const otherResponse = await people.otherContacts.list({
+            pageSize: maxResults,
+            readMask: 'names,emailAddresses',
+        });
+        (otherResponse.data.otherContacts || []).forEach(person => {
+            const email = person.emailAddresses?.[0]?.value;
+            const name = person.names?.[0]?.displayName || "Unknown";
+            if (email && !allContactsMap.has(email.toLowerCase())) {
+                allContactsMap.set(email.toLowerCase(), name);
+            }
+        });
+    } catch (e: any) {
+        console.error("Error listing other contacts:", e?.message);
+    }
+
+    return Array.from(allContactsMap.entries()).map(([email, name]) => ({
+        name,
+        email
+    }));
 }
 
 /**

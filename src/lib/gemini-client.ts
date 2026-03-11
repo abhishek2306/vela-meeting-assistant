@@ -75,19 +75,37 @@ function shouldSkipModel(err: any): boolean {
  * @param prompt - The full prompt string to send to the model
  * @returns The text response from the first successful model
  */
-export async function generateWithFailover(prompt: string): Promise<string> {
+export async function generateWithFailover(
+    prompt: string,
+    images?: { data: string; mimeType: string }[]
+): Promise<string> {
     const models = getModelList();
     let lastError: Error | null = null;
 
+    // Convert images to Gemini parts if provided
+    const parts: any[] = [prompt];
+    if (images && images.length > 0) {
+        for (const img of images) {
+            // Strip data:image/...;base64, prefix if present
+            const base64Data = img.data.includes(",") ? img.data.split(",")[1] : img.data;
+            parts.push({
+                inlineData: {
+                    data: base64Data,
+                    mimeType: img.mimeType
+                }
+            });
+        }
+    }
+
     for (const modelName of models) {
         let attempt = 0;
-        const maxAttempts = 2; // Try each model at most twice (once immediately, once after delay)
+        const maxAttempts = 2;
 
         while (attempt < maxAttempts) {
             attempt++;
             try {
                 const model: GenerativeModel = genAI.getGenerativeModel({ model: modelName });
-                const result = await model.generateContent(prompt);
+                const result = await model.generateContent(parts);
                 const text = result.response.text().trim();
 
                 if (modelName !== models[0]) {

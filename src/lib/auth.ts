@@ -10,9 +10,7 @@ declare module "next-auth" {
 }
 
 import GoogleProvider from "next-auth/providers/google";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "@/lib/prisma";
 
 export const authOptions: AuthOptions = {
     adapter: PrismaAdapter(prisma) as any,
@@ -32,19 +30,23 @@ export const authOptions: AuthOptions = {
         })
     ],
     callbacks: {
-        async session({ session, user, token }) {
-            // Send properties to the client
+        async session({ session, token }) {
+            // With JWT strategy, user ID comes from token.sub
             if (token) {
                 (session as any).accessToken = token.accessToken;
-            }
-            if (user) {
-                session.user.id = user.id;
+                if (token.sub) {
+                    session.user.id = token.sub;
+                }
             }
             return session;
         },
-        async jwt({ token, account }) {
+        async jwt({ token, account, user }) {
+            // Persist access token and user ID on first sign-in
             if (account) {
                 token.accessToken = account.access_token;
+            }
+            if (user) {
+                token.sub = user.id;
             }
             return token;
         }

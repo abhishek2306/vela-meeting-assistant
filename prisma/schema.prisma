@@ -16,6 +16,29 @@ model User {
   accounts      Account[]
   sessions      Session[]
   meetings      Meeting[]
+  chatSessions  ChatSession[]
+}
+
+model ChatSession {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String    @default("New Chat")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id          String      @id @default(cuid())
+  sessionId   String
+  role        String      // "user" or "assistant"
+  content     String
+  attachments String?     // JSON string of attachments
+  createdAt   DateTime    @default(now())
+  
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model Account {
@@ -72,11 +95,13 @@ model Transcript {
   id          String   @id @default(cuid())
   meetingId   String   @unique
   text        String
-  source      String   @default("BOT") // BOT or NATIVE_DRIVE
+  source      String   @default("BOT") // BOT or NATIVE_DRIVE or MANUAL
+  driveFileId String?  @unique
   createdAt   DateTime @default(now())
   
   meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 }
+
 
 model MoM {
   id          String   @id @default(cuid())
