@@ -52,3 +52,9 @@ next-env.d.ts
 
 # prisma generated client
 /src/generated/prisma
+
+# debug screenshots (local development artifacts)
+debug-*.png
+
+# local test scripts
+test-bot.js
