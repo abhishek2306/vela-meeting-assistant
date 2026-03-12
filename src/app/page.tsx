@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getUpcomingEvents } from "@/lib/google-api";
 import { Chatbot } from "@/components/Chatbot";
+import { DashboardContent } from "@/components/DashboardContent";
 import { Calendar, Video, Clock, Zap } from "lucide-react";
 
 export default async function Home() {
@@ -90,81 +91,7 @@ export default async function Home() {
         </div>
       ) : (
         /* ── Main Dashboard ── */
-        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: "24px", alignItems: "start" }}>
-
-          {/* ── Sidebar: Upcoming Meetings ── */}
-          <div style={cardStyle}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-              <div style={{ background: "rgba(108,99,255,0.15)", borderRadius: "8px", padding: "6px" }}>
-                <Calendar style={{ width: "16px", height: "16px", color: "#a78bfa" }} />
-              </div>
-              <h2 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "rgba(240,244,255,0.9)" }}>Upcoming Meetings</h2>
-            </div>
-
-            {error && (
-              <p style={{ color: "#f87171", fontSize: "0.8rem", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: "10px", padding: "10px 14px" }}>
-                {error}
-              </p>
-            )}
-
-            {events.length === 0 && !error ? (
-              <div style={{ textAlign: "center", padding: "32px 16px" }}>
-                <Calendar style={{ width: "32px", height: "32px", color: "rgba(240,244,255,0.15)", margin: "0 auto 12px" }} />
-                <p style={{ color: "rgba(240,244,255,0.3)", fontSize: "0.8rem", margin: 0 }}>No upcoming events</p>
-              </div>
-            ) : (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-                {events.map((event) => {
-                  const start = new Date(event.start?.dateTime || event.start?.date);
-                  const isToday = start.toDateString() === new Date().toDateString();
-                  return (
-                    <li key={event.id} style={{
-                      padding: "12px 14px",
-                      borderRadius: "12px",
-                      background: isToday ? "rgba(108,99,255,0.1)" : "rgba(255,255,255,0.03)",
-                      border: `1px solid ${isToday ? "rgba(108,99,255,0.25)" : "rgba(255,255,255,0.06)"}`,
-                      cursor: "default"
-                    }}>
-                      <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 600, color: "rgba(240,244,255,0.9)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={event.summary}>
-                        {event.summary || "Untitled Event"}
-                      </p>
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "4px" }}>
-                        <Clock style={{ width: "11px", height: "11px", color: "rgba(240,244,255,0.3)" }} />
-                        <p style={{ margin: 0, fontSize: "0.72rem", color: "rgba(240,244,255,0.4)" }}>
-                          {start.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </p>
-                        {isToday && <span style={{ marginLeft: "auto", fontSize: "0.65rem", fontWeight: 600, color: "#a78bfa", background: "rgba(108,99,255,0.2)", padding: "1px 7px", borderRadius: "999px" }}>Today</span>}
-                      </div>
-                      {event.hangoutLink && (
-                        <a
-                          href={event.hangoutLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: "inline-flex", alignItems: "center", gap: "5px",
-                            marginTop: "8px", fontSize: "0.72rem", fontWeight: 600,
-                            color: "#a78bfa", background: "rgba(108,99,255,0.15)",
-                            border: "1px solid rgba(108,99,255,0.3)",
-                            padding: "3px 10px", borderRadius: "6px", textDecoration: "none"
-                          }}
-                        >
-                          <Video style={{ width: "11px", height: "11px" }} />
-                          Join Meet
-                        </a>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          {/* ── Main: Chatbot ── */}
-          <div>
-            <Chatbot />
-          </div>
-
-        </div>
+        <DashboardContent events={events} error={error} />
       )}
     </div>
   );

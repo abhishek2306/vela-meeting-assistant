@@ -2,6 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Zap, User, Sparkles, Trash2, Paperclip, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import * as mammoth from "mammoth";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set up PDF.js worker
+if (typeof window !== "undefined") {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+}
 
 interface Attachment {
     name: string;
@@ -376,8 +383,23 @@ export function Chatbot() {
                     reader.readAsText(file);
                 });
                 newAttachments.push({ name: file.name, type: "text/plain", data: text });
+            } else if (file.name.endsWith(".docx")) {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer });
+                newAttachments.push({ name: file.name, type: "text/plain", data: result.value });
+            } else if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = "";
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    const strings = content.items.map((item: any) => item.str);
+                    fullText += strings.join(" ") + "\n";
+                }
+                newAttachments.push({ name: file.name, type: "text/plain", data: fullText });
             } else {
-                alert(`❌ "${file.name}" is not supported.\n\nVela supports:\n• Images (jpg, png, gif, webp)\n• Text files (txt, md, json, csv)\n\nFor Word or PDF documents, please copy the text and paste it directly into the chat.`);
+                alert(`❌ "${file.name}" is not supported.\n\nVela supports:\n• Images (jpg, png, gif, webp)\n• PDFs (.pdf)\n• Word Docs (.docx)\n• Text files (txt, md, json, csv)`);
             }
         }
 

@@ -56,3 +56,37 @@ ${transcript}
         throw error;
     }
 }
+
+/**
+ * Generates a daily morning briefing based on schedule and action items.
+ */
+export async function generateMorningBrief(name: string, events: any[], actionItems: any[]) {
+    const prompt = `
+You are Vela, a premium AI executive assistant. Your goal is to prepare a "Morning Briefing" for ${name}.
+
+### DATA:
+1. **Today's Schedule**:
+${events.map(e => `- ${e.summary} at ${new Date(e.start.dateTime || e.start.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`).join("\n") || "No meetings scheduled today."}
+
+2. **Pending Action Items**:
+${actionItems.map(i => `- [${i.priority}] ${i.title}: ${i.description || ""}`).join("\n") || "No pending action items."}
+
+### TASK:
+Generate a warm, professional, and highly actionable briefing email content.
+Use the following structure:
+1. **Greeting**: Warm and personalized.
+2. **The "Big Picture"**: A 2-sentence overview of the day's intensity and focus.
+3. **Meeting Prep**: For each meeting today, provide a "Pro-Tip" or "Prep Note" (e.g., "Review the Q3 projections before this starts").
+4. **Action Item Focus**: Highlight 1-2 high-priority items from yesterday that should be tackled first.
+5. **Closing**: A supportive, empowering sign-off.
+
+Format the output in clean Markdown.
+  `;
+
+    try {
+        return await generateWithFailover(prompt);
+    } catch (error) {
+        console.error("Error generating briefing from Gemini:", error);
+        return "Vela couldn't generate a brief today, but you have a productive day ahead!";
+    }
+}
