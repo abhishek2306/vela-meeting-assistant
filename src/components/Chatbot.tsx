@@ -123,6 +123,86 @@ export function Chatbot() {
         setMessages([{ role: "assistant", content: WELCOME }]);
     };
 
+    const speak = (text: string) => {
+        if (!isSpeechEnabled) return;
+        window.speechSynthesis.cancel();
+        
+        const cleanText = text
+            .replace(/\*\*(.*?)\*\*/g, "$1") 
+            .replace(/### (.*?)\n/g, "$1. ")
+            .replace(/• (.*?)\n/g, "$1. ")
+            .trim();
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        const voices = window.speechSynthesis.getVoices();
+        const indianFemaleVoice = voices.find(v => 
+            (v.lang === "en-IN" && (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("india") || v.name.toLowerCase().includes("heera"))) ||
+            (v.lang.startsWith("en") && v.name.toLowerCase().includes("india") && v.name.toLowerCase().includes("female"))
+        );
+
+        if (indianFemaleVoice) {
+            utterance.voice = indianFemaleVoice;
+        } else {
+            const fallbackVoice = voices.find(v => v.lang === "en-IN") || 
+                                 voices.find(v => v.name.toLowerCase().includes("female") && v.lang.startsWith("en"));
+            if (fallbackVoice) utterance.voice = fallbackVoice;
+        }
+
+        utterance.rate = 1.0;
+        utterance.pitch = 1.05;
+        window.speechSynthesis.speak(utterance);
+    };
+
+    const sendMessage = async (e?: React.FormEvent, customMsg?: string) => {
+        if (e) e.preventDefault();
+        const textToSend = customMsg || input.trim();
+        if (!textToSend && attachments.length === 0 && !isLoading) return;
+        if (!customMsg) setInput("");
+
+        const newMessages: Message[] = customMsg
+            ? [...messages]
+            : [...messages, { role: "user", content: textToSend, attachments: attachments.length > 0 ? attachments : undefined }];
+
+        if (!customMsg) {
+            setMessages(newMessages);
+            setAttachments([]);
+        }
+        setIsLoading(true);
+
+        try {
+            const response = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    message: textToSend,
+                    chatHistory: messages,
+                    sessionId: currentSessionId,
+                    attachments: attachments.length > 0 ? attachments : undefined
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Failed to send message");
+
+            setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+            speak(data.reply);
+
+            if (data.sessionId && !currentSessionId) {
+                setCurrentSessionId(data.sessionId);
+                fetchSessions();
+            } else {
+                fetchSessions();
+            }
+        } catch (error: any) {
+            setMessages((prev) => [
+                ...prev,
+                { role: "assistant", content: `Sorry, something went wrong: ${error.message}` },
+            ]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const toggleVoice = useCallback(() => {
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (!SpeechRecognition) {
@@ -139,9 +219,12 @@ export function Chatbot() {
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = "en-US";
+        recognition.lang = "en-IN";
+        let silenceTimer: any = null;
 
         recognition.onresult = (event: any) => {
+            if (silenceTimer) clearTimeout(silenceTimer);
+
             let interim = "";
             let final = "";
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -154,10 +237,36 @@ export function Chatbot() {
             }
 
             if (final) {
+                const cleanFinal = final.toLowerCase().trim();
+                // Send keyword detection
+                if (cleanFinal.endsWith("send") || cleanFinal.endsWith("send it") || cleanFinal.endsWith("send message")) {
+                    const messageToSubmit = (input + " " + final.replace(/send( it| message)?/gi, "")).trim();
+                    if (messageToSubmit) {
+                        setInput("");
+                        sendMessage(undefined, messageToSubmit);
+                        recognition.stop();
+                        setIsListening(false);
+                    }
+                    return;
+                }
+
                 setInput((prev) => {
                     const updated = (prev + " " + final).trim();
                     return updated;
                 });
+
+                // Auto-send after 1.5s of silence on a final transcript
+                silenceTimer = setTimeout(() => {
+                    setInput((prev) => {
+                        if (prev.trim()) {
+                            sendMessage(undefined, prev.trim());
+                            recognition.stop();
+                            setIsListening(false);
+                            return "";
+                        }
+                        return prev;
+                    });
+                }, 1500);
             }
         };
 
@@ -170,41 +279,9 @@ export function Chatbot() {
         // If speaking, stop it
         window.speechSynthesis.cancel();
         setIsListening(true);
-    }, [isListening]);
+        setIsSpeechEnabled(true); // Auto-enable voice output for hands-free mode
+    }, [isListening, input, sendMessage]);
 
-    const speak = (text: string) => {
-        if (!isSpeechEnabled) return;
-        window.speechSynthesis.cancel(); // Stop current speech
-        
-        // Clean markdown (bolding, headers) for cleaner speech
-        const cleanText = text
-            .replace(/\*\*(.*?)\*\*/g, "$1") 
-            .replace(/### (.*?)\n/g, "$1. ")
-            .replace(/• (.*?)\n/g, "$1. ")
-            .trim();
-
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-        
-        // Voice selection: prioritize Indian Female voices (en-IN)
-        const voices = window.speechSynthesis.getVoices();
-        const indianFemaleVoice = voices.find(v => 
-            (v.lang === "en-IN" && (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("india") || v.name.toLowerCase().includes("heera"))) ||
-            (v.lang.startsWith("en") && v.name.toLowerCase().includes("india") && v.name.toLowerCase().includes("female"))
-        );
-
-        if (indianFemaleVoice) {
-            utterance.voice = indianFemaleVoice;
-        } else {
-            // Fallback to any Indian voice or generic natural female
-            const fallbackVoice = voices.find(v => v.lang === "en-IN") || 
-                                 voices.find(v => v.name.toLowerCase().includes("female") && v.lang.startsWith("en"));
-            if (fallbackVoice) utterance.voice = fallbackVoice;
-        }
-
-        utterance.rate = 1.0;
-        utterance.pitch = 1.05; // Slightly higher pitch for a more natural feminine tone
-        window.speechSynthesis.speak(utterance);
-    };
 
     // Cleanup on unmount
     useEffect(() => {
@@ -249,61 +326,6 @@ export function Chatbot() {
         setAttachments((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const sendMessage = async (e?: React.FormEvent, customMsg?: string) => {
-        if (e) e.preventDefault();
-        const textToSend = customMsg || input.trim();
-        if (!textToSend && attachments.length === 0 && !isLoading) return;
-        if (!customMsg) setInput("");
-
-        const newMessages: Message[] = customMsg
-            ? [...messages]
-            : [...messages, { role: "user", content: textToSend, attachments: attachments.length > 0 ? attachments : undefined }];
-
-        if (!customMsg) {
-            setMessages(newMessages);
-            setAttachments([]); // Clear previews after sending
-        }
-        setIsLoading(true);
-
-        try {
-            const response = await fetch("/api/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    message: textToSend,
-                    chatHistory: messages, // Send history without the newest optimistic message
-                    sessionId: currentSessionId,
-                    attachments: attachments.length > 0 ? attachments : undefined
-                }),
-            });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || "Failed to send message");
-
-            setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-            speak(data.reply);
-
-            // If it was a new session, update state and refresh sidebar
-            if (data.sessionId && !currentSessionId) {
-                setCurrentSessionId(data.sessionId);
-                fetchSessions();
-            } else {
-                // Just update sidebar updatedAt order
-                fetchSessions();
-            }
-
-            if (data.systemAction === "EXECUTE_NEXT" && data.injectedContext) {
-                setTimeout(() => sendMessage(undefined, data.injectedContext), 500);
-            }
-        } catch (error: any) {
-            setMessages((prev) => [
-                ...prev,
-                { role: "assistant", content: `Sorry, something went wrong: ${error.message}` },
-            ]);
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
     const renderContent = (text: string) => {
         const parts = text.split(/(\*\*[^*]+\*\*)/g);
