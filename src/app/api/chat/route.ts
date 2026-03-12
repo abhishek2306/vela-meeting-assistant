@@ -89,17 +89,16 @@ The user is talking to you directly. Help them manage their meetings, schedule, 
 
 ### INTERNAL COMMAND PROTOCOL:
 If the user asks you to do a specific action, you MUST output a raw JSON object and NOTHING else. 
-- **DO NOT include any conversational preamble or preamble text**. 
-- **DO NOT guess or fabricate email addresses**. 
-- **NO PLACEHOLDERS**: Never use "REPLACEMENT_EMAIL@REAL_DOMAIN.COM" or similar. Use real emails from history or SEARCH_CONTACT.
-- **Year Assumption**: Always assume the current year (${new Date().getFullYear()}) if not specified.
-- **ALWAYS use SEARCH_CONTACT** if you need an email but don't have it.
+- **NO PREAMBLE**: Do not include conversational text with a command.
+- **STRICT EMAIL POLICY**: Do NOT guess or fabricate emails. Placeholders like "@example.com" or "@domain.com" are FORBIDDEN. If unknown, you MUST use \`SEARCH_CONTACT\`.
+- **YEAR POLICY**: Always assume the current year (${new Date().getFullYear()}) if not specified. Never ask for the year.
+- **NO PLACEHOLDERS**: Never use "..." or "unknown" in \`attendeeEmails\`.
 
 Supported Commands:
 1. FETCH_SCHEDULE: { "command": "FETCH_SCHEDULE" }
 2. JOIN_MEETING: { "command": "JOIN_MEETING", "url": "..." }
 3. SEARCH_CONTACT: { "command": "SEARCH_CONTACT", "name": "...", "nextAction": "SCHEDULE_MEETING", "context": "..." }
-4. SCHEDULE_MEETING: { "command": "SCHEDULE_MEETING", "title": "...", "durationMinutes": 30, "attendeeEmails": ["..."], "startTime": "ISO_8601" }
+4. SCHEDULE_MEETING: { "command": "SCHEDULE_MEETING", "title": "...", "durationMinutes": 30, "attendeeEmails": ["real_email@domain.com"], "startTime": "ISO_8601" }
 5. CANCEL_MEETING: { "command": "CANCEL_MEETING", "titleKeyword": "...", "startTime": "ISO_DATE" }
 6. FETCH_MOM: { "command": "FETCH_MOM", "keyword": "...", "timeHint": "HH:MM", "attendeeName": "..." }
 7. SEND_MOM: { "command": "SEND_MOM", "keyword": "...", "recipientNames": ["..."], "recipientEmails": [] }
@@ -108,7 +107,7 @@ Supported Commands:
 10. SYNC_TRANSCRIPTS: { "command": "SYNC_TRANSCRIPTS", "hoursBack": 24 }
 11. LIST_CONTACTS: { "command": "LIST_CONTACTS", "includeUnknown": false }
 
-IMPORTANT: Confirm title/time UNLESS provided. If email is found via SEARCH_CONTACT, confirm before scheduling.
+IMPORTANT: Confirm title/time UNLESS provided. If email is missing, you MUST call \`SEARCH_CONTACT\` first. Always assume current year.
 
 Prior Conversation History:
 ${historyText}
@@ -247,17 +246,45 @@ Current User message: "${userPromptWithContext}"
                 const title = command.title || "Vela Scheduled Meeting";
                 const duration = command.durationMinutes || 30;
                 let attendeeEmails: string[] = [];
+
                 if (Array.isArray(command.attendeeEmails)) {
                     attendeeEmails = command.attendeeEmails;
                 } else if (typeof command.attendeeEmails === "string") {
                     attendeeEmails = [command.attendeeEmails];
                 }
-                const startTime = command.startTime ? new Date(command.startTime) : new Date(Date.now() + 60 * 60 * 1000);
-                const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
-                const event = await scheduleMeeting(accessToken, title, startTime, endTime, attendeeEmails);
-                finalReplyText = `I have scheduled the meeting **"${title}"** for ${startTime.toLocaleString()}.\nHere is your Google Meet link: ${event.hangoutLink}`;
-                if (attendeeEmails.length > 0) {
-                    finalReplyText += `\nCalendar invitations sent to: ${attendeeEmails.join(", ")}.`;
+
+                // SECURITY & VALIDATION: Reject fabricated placeholder emails
+                const hasPlaceholders = attendeeEmails.some(e =>
+                    e.toLowerCase().includes("example.com") ||
+                    e.toLowerCase().includes("domain.com") ||
+                    e.toLowerCase().includes("...")
+                );
+
+                if (hasPlaceholders) {
+                    finalReplyText = "I started to schedule that, but I realized I don't have the correct email address for all participants. I've forbidden myself from guessing emails.\n\nCould you please provide the correct email address, or should I look it up again?";
+                } else {
+                    // DATE SANITIZATION: Automatically inject year if the AI or user missed it
+                    let rawStart = command.startTime;
+                    if (rawStart && typeof rawStart === "string" && !rawStart.match(/^\d{4}/)) {
+                        // If it starts with DD/MM or MM/DD instead of YYYY, prefix current year
+                        const currentYear = new Date().getFullYear();
+                        rawStart = `${currentYear}-${rawStart}`;
+                    }
+
+                    const startTime = rawStart ? new Date(rawStart) : new Date(Date.now() + 60 * 60 * 1000);
+
+                    // Ensure the year is at least current year (vague AI parsing fallback)
+                    if (startTime.getFullYear() < 2000) {
+                        startTime.setFullYear(new Date().getFullYear());
+                    }
+
+                    const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+                    const event = await scheduleMeeting(accessToken, title, startTime, endTime, attendeeEmails);
+
+                    finalReplyText = `I have scheduled the meeting **"${title}"** for ${startTime.toLocaleString()}.\nHere is your Google Meet link: ${event.hangoutLink}`;
+                    if (attendeeEmails.length > 0) {
+                        finalReplyText += `\nCalendar invitations sent to: ${attendeeEmails.join(", ")}.`;
+                    }
                 }
             }
 
