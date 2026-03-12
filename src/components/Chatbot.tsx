@@ -36,6 +36,9 @@ export function Chatbot() {
     const silenceTimerRef = useRef<any>(null);
     const isListeningRef = useRef(false);
     const isConversationalModeRef = useRef(false);
+    const isSpeechEnabledRef = useRef(false);
+    const messagesRef = useRef<Message[]>(messages);
+    const isLoadingRef = useRef(false);
 
     // On mount: load sessions and restore the last active session
     useEffect(() => {
@@ -105,10 +108,11 @@ export function Chatbot() {
         }
     };
 
-    // Keep inputRefVal in sync with typed input
-    useEffect(() => {
-        inputRefVal.current = input;
-    }, [input]);
+    // Keep Refs in sync with React state to avoid stale closures in voice callbacks
+    useEffect(() => { inputRefVal.current = input; }, [input]);
+    useEffect(() => { isSpeechEnabledRef.current = isSpeechEnabled; }, [isSpeechEnabled]);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
+    useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
     const loadSession = async (id: string) => {
         if (isLoading || id === currentSessionId) return;
@@ -134,7 +138,7 @@ export function Chatbot() {
     };
 
     const speak = (text: string, onEnd?: () => void) => {
-        if (!isSpeechEnabled) {
+        if (!isSpeechEnabledRef.current) {
             if (onEnd) onEnd();
             return;
         }
@@ -178,11 +182,14 @@ export function Chatbot() {
     const sendMessage = async (e?: React.FormEvent, customMsg?: string) => {
         if (e) e.preventDefault();
         
+        // Use Ref for loading guard to prevent duplicates from race conditions
+        if (isLoadingRef.current) return;
+
         // Prevent race condition: if a manual send happens, clear silence timer
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
         const textToSend = customMsg || input.trim();
-        if (!textToSend && attachments.length === 0 && !isLoading) return;
+        if (!textToSend && attachments.length === 0) return;
         
         if (!customMsg) {
             setInput("");
@@ -190,14 +197,15 @@ export function Chatbot() {
         }
 
         const newMessages: Message[] = customMsg
-            ? [...messages]
-            : [...messages, { role: "user", content: textToSend, attachments: attachments.length > 0 ? attachments : undefined }];
+            ? [...messagesRef.current]
+            : [...messagesRef.current, { role: "user", content: textToSend, attachments: attachments.length > 0 ? attachments : undefined }];
 
         if (!customMsg) {
             setMessages(newMessages);
             setAttachments([]);
         }
         setIsLoading(true);
+        isLoadingRef.current = true;
 
         try {
             const response = await fetch("/api/chat", {
@@ -205,7 +213,7 @@ export function Chatbot() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     message: textToSend,
-                    chatHistory: messages,
+                    chatHistory: messagesRef.current,
                     sessionId: currentSessionId,
                     attachments: attachments.length > 0 ? attachments : undefined
                 }),
@@ -237,6 +245,7 @@ export function Chatbot() {
             ]);
         } finally {
             setIsLoading(false);
+            isLoadingRef.current = false;
         }
     };
 
