@@ -26,6 +26,7 @@ export function Chatbot() {
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [isListening, setIsListening] = useState(false);
     const [isSpeechEnabled, setIsSpeechEnabled] = useState(false);
+    const [isConversationalMode, setIsConversationalMode] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -123,8 +124,11 @@ export function Chatbot() {
         setMessages([{ role: "assistant", content: WELCOME }]);
     };
 
-    const speak = (text: string) => {
-        if (!isSpeechEnabled) return;
+    const speak = (text: string, onEnd?: () => void) => {
+        if (!isSpeechEnabled) {
+            if (onEnd) onEnd();
+            return;
+        }
         window.speechSynthesis.cancel();
         
         const cleanText = text
@@ -134,6 +138,15 @@ export function Chatbot() {
             .trim();
 
         const utterance = new SpeechSynthesisUtterance(cleanText);
+
+        if (onEnd) {
+            utterance.onend = () => {
+                // Give a small delay before triggering callback (e.g. restarting mic)
+                setTimeout(onEnd, 300);
+            };
+            utterance.onerror = () => onEnd();
+        }
+
         const voices = window.speechSynthesis.getVoices();
         const indianFemaleVoice = voices.find(v => 
             (v.lang === "en-IN" && (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("india") || v.name.toLowerCase().includes("heera"))) ||
@@ -185,7 +198,14 @@ export function Chatbot() {
             if (!response.ok) throw new Error(data.error || "Failed to send message");
 
             setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-            speak(data.reply);
+            
+            // If we are in conversational mode, restart the mic after speaking finishes
+            const onSpeechEnd = () => {
+                if (isConversationalMode) {
+                    toggleVoice();
+                }
+            };
+            speak(data.reply, onSpeechEnd);
 
             if (data.sessionId && !currentSessionId) {
                 setCurrentSessionId(data.sessionId);
@@ -213,8 +233,11 @@ export function Chatbot() {
         if (isListening) {
             recognitionRef.current?.stop();
             setIsListening(false);
+            setIsConversationalMode(false); // Stop the loop if manually stopped
             return;
         }
+
+        setIsConversationalMode(true); // Enable loop
 
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
