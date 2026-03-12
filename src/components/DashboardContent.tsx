@@ -18,9 +18,48 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
     const [showBriefModal, setShowBriefModal] = useState(false);
     const [mounted, setMounted] = useState(false);
 
+    // Bot States
+    const [activeBotId, setActiveBotId] = useState<string | null>(null);
+    const [botStatus, setBotStatus] = useState<string>("");
+
     useEffect(() => {
         setMounted(true);
     }, []);
+
+    const handleJoinBot = async (meetUrl: string, eventId: string) => {
+        try {
+            setActiveBotId(eventId);
+            setBotStatus("Joining...");
+            const res = await fetch("/api/meetings/bot", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ meetingUrl: meetUrl, id: eventId })
+            });
+            if (res.ok) {
+                setBotStatus("Recording");
+            } else {
+                setBotStatus("Failed to join");
+                setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 3000);
+            }
+        } catch (error) {
+            console.error(error);
+            setBotStatus("Error");
+            setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 3000);
+        }
+    };
+
+    const handleStopBot = async (eventId: string) => {
+        try {
+            setBotStatus("Stopping...");
+            await fetch(`/api/meetings/bot?id=${eventId}`, { method: "DELETE" });
+            setActiveBotId(null);
+            setBotStatus("");
+            alert("Meeting ended. Generating summary... You'll see it in your chat shortly.");
+        } catch (error) {
+            console.error(error);
+            setBotStatus("Error stopping");
+        }
+    };
 
     const sidebarItemStyle = (isActive: boolean) => ({
         display: "flex",
@@ -158,7 +197,56 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
                                                 {mounted ? start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--"}
                                             </p>
                                         </div>
+                                        {event.hangoutLink && (
+                                            <div style={{ marginTop: "10px" }}>
+                                                {activeBotId === event.id ? (
+                                                    <button
+                                                        onClick={() => handleStopBot(event.id)}
+                                                        style={{
+                                                            background: "rgba(239, 68, 68, 0.2)",
+                                                            border: "1px solid rgba(239, 68, 68, 0.4)",
+                                                            color: "#f87171",
+                                                            padding: "6px 12px",
+                                                            borderRadius: "6px",
+                                                            fontSize: "0.75rem",
+                                                            cursor: "pointer",
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: "6px",
+                                                            width: "100%",
+                                                            justifyContent: "center"
+                                                        }}
+                                                    >
+                                                        <span style={{ width: "8px", height: "8px", background: "#f87171", borderRadius: "50%", display: "inline-block", animation: "pulse 2s infinite" }} />
+                                                        {botStatus} - Stop
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleJoinBot(event.hangoutLink, event.id)}
+                                                        style={{
+                                                            background: "rgba(108, 99, 255, 0.15)",
+                                                            border: "1px solid rgba(108, 99, 255, 0.3)",
+                                                            color: "#a78bfa",
+                                                            padding: "6px 12px",
+                                                            borderRadius: "6px",
+                                                            fontSize: "0.75rem",
+                                                            cursor: "pointer",
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: "6px",
+                                                            width: "100%",
+                                                            justifyContent: "center",
+                                                            transition: "all 0.2s"
+                                                        }}
+                                                    >
+                                                        <Video style={{ width: "14px", height: "14px" }} />
+                                                        Join as Bot
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
                                     </li>
+
                                 );
                             })}
                         </ul>
