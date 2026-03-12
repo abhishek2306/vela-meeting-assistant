@@ -29,9 +29,13 @@ export function Chatbot() {
     const [isConversationalMode, setIsConversationalMode] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null); // For focusing
+    const inputRefVal = useRef(""); // For accessing latest input in voice callbacks
     const fileInputRef = useRef<HTMLInputElement>(null);
     const recognitionRef = useRef<any>(null);
+    const silenceTimerRef = useRef<any>(null);
+    const isListeningRef = useRef(false);
+    const isConversationalModeRef = useRef(false);
 
     // On mount: load sessions and restore the last active session
     useEffect(() => {
@@ -101,6 +105,11 @@ export function Chatbot() {
         }
     };
 
+    // Keep inputRefVal in sync with typed input
+    useEffect(() => {
+        inputRefVal.current = input;
+    }, [input]);
+
     const loadSession = async (id: string) => {
         if (isLoading || id === currentSessionId) return;
         setIsLoading(true);
@@ -168,9 +177,17 @@ export function Chatbot() {
 
     const sendMessage = async (e?: React.FormEvent, customMsg?: string) => {
         if (e) e.preventDefault();
+        
+        // Prevent race condition: if a manual send happens, clear silence timer
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
         const textToSend = customMsg || input.trim();
         if (!textToSend && attachments.length === 0 && !isLoading) return;
-        if (!customMsg) setInput("");
+        
+        if (!customMsg) {
+            setInput("");
+            inputRefVal.current = "";
+        }
 
         const newMessages: Message[] = customMsg
             ? [...messages]
@@ -201,7 +218,7 @@ export function Chatbot() {
             
             // If we are in conversational mode, restart the mic after speaking finishes
             const onSpeechEnd = () => {
-                if (isConversationalMode) {
+                if (isConversationalModeRef.current) {
                     toggleVoice();
                 }
             };
@@ -230,23 +247,26 @@ export function Chatbot() {
             return;
         }
 
-        if (isListening) {
+        if (isListeningRef.current) {
             recognitionRef.current?.stop();
+            isListeningRef.current = false;
             setIsListening(false);
-            setIsConversationalMode(false); // Stop the loop if manually stopped
+            isConversationalModeRef.current = false;
+            setIsConversationalMode(false);
+            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
             return;
         }
 
-        setIsConversationalMode(true); // Enable loop
+        isConversationalModeRef.current = true;
+        setIsConversationalMode(true);
 
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = "en-IN";
-        let silenceTimer: any = null;
 
         recognition.onresult = (event: any) => {
-            if (silenceTimer) clearTimeout(silenceTimer);
+            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
             let interim = "";
             let final = "";
@@ -263,11 +283,14 @@ export function Chatbot() {
                 const cleanFinal = final.toLowerCase().trim();
                 // Send keyword detection
                 if (cleanFinal.endsWith("send") || cleanFinal.endsWith("send it") || cleanFinal.endsWith("send message")) {
-                    const messageToSubmit = (input + " " + final.replace(/send( it| message)?/gi, "")).trim();
+                    const messageToSubmit = (inputRefVal.current + " " + final.replace(/send( it| message)?/gi, "")).trim();
                     if (messageToSubmit) {
+                        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
                         setInput("");
+                        inputRefVal.current = "";
                         sendMessage(undefined, messageToSubmit);
                         recognition.stop();
+                        isListeningRef.current = false;
                         setIsListening(false);
                     }
                     return;
@@ -275,35 +298,43 @@ export function Chatbot() {
 
                 setInput((prev) => {
                     const updated = (prev + " " + final).trim();
+                    inputRefVal.current = updated;
                     return updated;
                 });
 
                 // Auto-send after 1.5s of silence on a final transcript
-                silenceTimer = setTimeout(() => {
-                    setInput((prev) => {
-                        if (prev.trim()) {
-                            sendMessage(undefined, prev.trim());
-                            recognition.stop();
-                            setIsListening(false);
-                            return "";
-                        }
-                        return prev;
-                    });
+                silenceTimerRef.current = setTimeout(() => {
+                    const currentInput = inputRefVal.current;
+                    if (currentInput.trim()) {
+                        setInput("");
+                        inputRefVal.current = "";
+                        sendMessage(undefined, currentInput.trim());
+                        recognition.stop();
+                        isListeningRef.current = false;
+                        setIsListening(false);
+                    }
                 }, 1500);
             }
         };
 
-        recognition.onerror = () => { setIsListening(false); };
-        recognition.onend = () => { setIsListening(false); };
+        recognition.onerror = () => { 
+            isListeningRef.current = false;
+            setIsListening(false); 
+        };
+        recognition.onend = () => { 
+            isListeningRef.current = false;
+            setIsListening(false); 
+        };
 
         recognitionRef.current = recognition;
         recognition.start();
 
         // If speaking, stop it
         window.speechSynthesis.cancel();
+        isListeningRef.current = true;
         setIsListening(true);
-        setIsSpeechEnabled(true); // Auto-enable voice output for hands-free mode
-    }, [isListening, input, sendMessage]);
+        setIsSpeechEnabled(true); 
+    }, []); // No dependencies - use Refs for state!
 
 
     // Cleanup on unmount
