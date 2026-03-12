@@ -175,9 +175,34 @@ export function Chatbot() {
     const speak = (text: string) => {
         if (!isSpeechEnabled) return;
         window.speechSynthesis.cancel(); // Stop current speech
-        const utterance = new SpeechSynthesisUtterance(text.replace(/\*\*/g, "")); // Clean markdown from speech
-        utterance.rate = 1.1;
-        utterance.pitch = 1.0;
+        
+        // Clean markdown (bolding, headers) for cleaner speech
+        const cleanText = text
+            .replace(/\*\*(.*?)\*\*/g, "$1") 
+            .replace(/### (.*?)\n/g, "$1. ")
+            .replace(/• (.*?)\n/g, "$1. ")
+            .trim();
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        
+        // Voice selection: prioritize Indian Female voices (en-IN)
+        const voices = window.speechSynthesis.getVoices();
+        const indianFemaleVoice = voices.find(v => 
+            (v.lang === "en-IN" && (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("india") || v.name.toLowerCase().includes("heera"))) ||
+            (v.lang.startsWith("en") && v.name.toLowerCase().includes("india") && v.name.toLowerCase().includes("female"))
+        );
+
+        if (indianFemaleVoice) {
+            utterance.voice = indianFemaleVoice;
+        } else {
+            // Fallback to any Indian voice or generic natural female
+            const fallbackVoice = voices.find(v => v.lang === "en-IN") || 
+                                 voices.find(v => v.name.toLowerCase().includes("female") && v.lang.startsWith("en"));
+            if (fallbackVoice) utterance.voice = fallbackVoice;
+        }
+
+        utterance.rate = 1.0;
+        utterance.pitch = 1.05; // Slightly higher pitch for a more natural feminine tone
         window.speechSynthesis.speak(utterance);
     };
 
