@@ -1,11 +1,6 @@
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { Page, Browser } from 'puppeteer';
+import puppeteer, { Page, Browser } from 'puppeteer';
 import path from 'path';
 import fs from 'fs';
-
-puppeteer.use(StealthPlugin());
-
 interface BotConfig {
     meetingUrl: string;
     userId: string;
@@ -43,6 +38,16 @@ export class MeetingBot {
 
         this.page = await this.browser.newPage();
         
+        // Manual Stealth Injection (Webpack Safe bypass for puppeteer-extra-plugin-stealth)
+        await this.page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+        });
+        
+        // Override user agent to look like a standard Chrome browser
+        await this.page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+
         // Block mic/camera permissions properly
         const context = this.browser.defaultBrowserContext();
         await context.overridePermissions(this.config.meetingUrl, ['microphone', 'camera', 'notifications']);

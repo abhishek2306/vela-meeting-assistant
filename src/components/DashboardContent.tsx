@@ -38,13 +38,14 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
             if (res.ok) {
                 setBotStatus("Recording");
             } else {
-                setBotStatus("Failed to join");
-                setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 3000);
+                const errData = await res.json().catch(() => ({}));
+                setBotStatus(`Failed: ${errData.error || res.status}`);
+                setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 5000);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            setBotStatus("Error");
-            setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 3000);
+            setBotStatus(`Error: ${error?.message || "Unknown"}`);
+            setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 5000);
         }
     };
 
