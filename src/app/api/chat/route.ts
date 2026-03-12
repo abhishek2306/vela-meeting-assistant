@@ -99,7 +99,7 @@ Supported Commands:
 2. JOIN_MEETING: { "command": "JOIN_MEETING", "url": "..." }
 3. SEARCH_CONTACT: { "command": "SEARCH_CONTACT", "name": "...", "nextAction": "SCHEDULE_MEETING", "context": "..." }
 4. SCHEDULE_MEETING: { "command": "SCHEDULE_MEETING", "title": "...", "durationMinutes": 30, "attendeeEmails": ["real_email@domain.com"], "startTime": "ISO_8601" }
-5. CANCEL_MEETING: { "command": "CANCEL_MEETING", "titleKeyword": "...", "startTime": "ISO_DATE" }
+5. CANCEL_MEETING: { "command": "CANCEL_MEETING", "titleKeywords": ["keyword1", "keyword2"], "startTime": "ISO_DATE" }
 6. FETCH_MOM: { "command": "FETCH_MOM", "keyword": "...", "timeHint": "HH:MM", "attendeeName": "..." }
 7. SEND_MOM: { "command": "SEND_MOM", "keyword": "...", "recipientNames": ["..."], "recipientEmails": [] }
 8. FETCH_TRANSCRIPT: { "command": "FETCH_TRANSCRIPT", "keyword": "..." }
@@ -255,9 +255,12 @@ Current User message: "${userPromptWithContext}"
 
                 // SECURITY & VALIDATION: Reject fabricated placeholder emails
                 const hasPlaceholders = attendeeEmails.some(e =>
-                    e.toLowerCase().includes("example.com") ||
-                    e.toLowerCase().includes("domain.com") ||
-                    e.toLowerCase().includes("...")
+                    /example\.com/i.test(e) ||
+                    /domain\.com/i.test(e) ||
+                    /yourdomain\.com/i.test(e) ||
+                    /test\.com/i.test(e) ||
+                    /dummy/i.test(e) ||
+                    e.includes("...")
                 );
 
                 if (hasPlaceholders) {
@@ -290,15 +293,50 @@ Current User message: "${userPromptWithContext}"
 
             // ── CANCEL_MEETING ──────────────────────────────────────────────────
             else if (command.command === "CANCEL_MEETING") {
-                const keyword = command.titleKeyword || "";
-                if (!keyword) {
+                let keywords: string[] = [];
+                if (Array.isArray(command.titleKeywords)) {
+                    keywords = command.titleKeywords;
+                } else if (typeof command.titleKeyword === "string") {
+                    keywords = [command.titleKeyword];
+                } else if (typeof command.titleKeywords === "string") {
+                    keywords = [command.titleKeywords];
+                }
+
+                if (keywords.length === 0 || !keywords[0]) {
                     finalReplyText = "Which meeting would you like to cancel? Please give me the title or person's name.";
                 } else {
-                    const cancelledTitle = await cancelMeeting(accessToken, keyword, command.startTime);
-                    if (!cancelledTitle) {
-                        finalReplyText = `I couldn't find an upcoming meeting matching "${keyword}". Please check your schedule and try again.`;
+                    const cancelled: string[] = [];
+                    const notFound: string[] = [];
+
+                    for (const kw of keywords) {
+                        const cancelledTitle = await cancelMeeting(accessToken, kw, command.startTime);
+                        if (cancelledTitle) {
+                            cancelled.push(cancelledTitle);
+                        } else {
+                            // try splitting keyword if it's long and has "and"
+                            let foundFallback = false;
+                            if (kw.toLowerCase().includes(" and ")) {
+                                const subKws = kw.split(/ and /i);
+                                for (const subKw of subKws) {
+                                    const subCancel = await cancelMeeting(accessToken, subKw.trim(), command.startTime);
+                                    if (subCancel) {
+                                        cancelled.push(subCancel);
+                                        foundFallback = true;
+                                    }
+                                }
+                            }
+                            if (!foundFallback) {
+                                notFound.push(kw);
+                            }
+                        }
+                    }
+
+                    if (cancelled.length > 0 && notFound.length === 0) {
+                        finalReplyText = `Done! I've cancelled **"${cancelled.join('", "')}"** and sent cancellation notices to all attendees.`;
+                    } else if (cancelled.length > 0 && notFound.length > 0) {
+                        finalReplyText = `I've cancelled **"${cancelled.join('", "')}"**, but I couldn't find upcoming meetings matching **"${notFound.join('", "')}"**.`;
                     } else {
-                        finalReplyText = `Done! I've cancelled **"${cancelledTitle}"** and sent cancellation notices to all attendees.`;
+                        finalReplyText = `I couldn't find upcoming meetings matching **"${notFound.join('", "')}"**. Please check your schedule and try again.`;
                     }
                 }
             }
