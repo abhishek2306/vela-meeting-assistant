@@ -90,3 +90,35 @@ Format the output in clean Markdown.
         return "Vela couldn't generate a brief today, but you have a productive day ahead!";
     }
 }
+
+/**
+ * Reasons over multiple documents from the Enterprise Knowledge Hub.
+ */
+export async function askKnowledgeBase(query: string, context: string) {
+    const prompt = `
+You are Vela, an AI executive assistant with access to the enterprise knowledge base. 
+Your goal is to provide a structured, factual, and source-cited answer based ONLY on the provided document context.
+
+### CONTEXT:
+${context}
+
+### USER QUERY:
+${query}
+
+### INSTRUCTIONS:
+1. **Answer Formally**: Provide a professional answer.
+2. **Citations**: Every time you mention a fact from the documents, cite it in brackets, e.g., "[1]" or "[Project_Brief.pdf]".
+3. **Synthesis**: If information is spread across multiple sources, combine them logically.
+4. **Permissions**: If a document looks restricted or sensitive, mention that you are citing from a specific source.
+5. **Unknowns**: If the context doesn't have the answer, say "I couldn't find specific information regarding this in the knowledge hubs."
+
+Format your response in clean Markdown.
+    `;
+
+    try {
+        return await generateWithFailover(prompt);
+    } catch (error) {
+        console.error("Error questioning knowledge base:", error);
+        return "I encountered an error while searching the enterprise hubs. Please try again.";
+    }
+}

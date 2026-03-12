@@ -6,7 +6,7 @@ import prisma from "@/lib/prisma";
 import { generateMorningBrief } from "@/lib/gemini";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -44,7 +44,7 @@ export async function GET() {
 
         // 4. Send Email (Optional if API Key exists)
         let emailSent = false;
-        if (process.env.RESEND_API_KEY) {
+        if (resend && process.env.RESEND_API_KEY) {
             try {
                 await resend.emails.send({
                     from: "Vela AI <onboarding@resend.dev>",

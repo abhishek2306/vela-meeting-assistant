@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Chatbot } from "@/components/Chatbot";
 import { ActionItems } from "@/components/ActionItems";
-import { Calendar, MessageSquare, CheckSquare, Clock, Video, Coffee, Sparkles, X } from "lucide-react";
+import { Calendar, MessageSquare, CheckSquare, Clock, Video, Coffee, Sparkles, X, Library } from "lucide-react";
+import { KnowledgeHub } from "@/components/KnowledgeHub";
 
 interface DashboardContentProps {
     events: any[];
@@ -11,7 +12,7 @@ interface DashboardContentProps {
 }
 
 export function DashboardContent({ events, error }: DashboardContentProps) {
-    const [activeTab, setActiveTab] = useState<"chat" | "tasks">("chat");
+    const [activeTab, setActiveTab] = useState<"chat" | "tasks" | "knowledge">("chat");
     const [brief, setBrief] = useState<string | null>(null);
     const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
     const [showBriefModal, setShowBriefModal] = useState(false);
@@ -78,6 +79,12 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
                         style={sidebarItemStyle(activeTab === "tasks")}
                     >
                         <CheckSquare size={18} /> Action Items
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab("knowledge")}
+                        style={sidebarItemStyle(activeTab === "knowledge")}
+                    >
+                        <Library size={18} /> Knowledge Hub
                     </button>
                     <button 
                         onClick={generateBrief}
@@ -156,7 +163,9 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
 
             {/* ── Main Content Area ── */}
             <div style={{ position: "relative" }}>
-                {activeTab === "chat" ? <Chatbot /> : <ActionItems />}
+                {activeTab === "chat" && <Chatbot />}
+                {activeTab === "tasks" && <ActionItems />}
+                {activeTab === "knowledge" && <KnowledgeHub />}
 
                 {/* Morning Brief Modal */}
                 {showBriefModal && brief && (

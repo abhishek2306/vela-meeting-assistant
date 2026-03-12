@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className} style={{ minHeight: "100vh", position: "relative" }}>
         <Providers>
           <Navigation />
