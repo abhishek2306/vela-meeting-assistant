@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Chatbot } from "@/components/Chatbot";
 import { ActionItems } from "@/components/ActionItems";
 import { Calendar, MessageSquare, CheckSquare, Clock, Video, Coffee, Sparkles, X, Library } from "lucide-react";
@@ -16,6 +16,11 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
     const [brief, setBrief] = useState<string | null>(null);
     const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
     const [showBriefModal, setShowBriefModal] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const sidebarItemStyle = (isActive: boolean) => ({
         display: "flex",
@@ -150,7 +155,7 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
                                         <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "4px" }}>
                                             <Clock style={{ width: "10px", height: "10px", color: "rgba(240,244,255,0.2)" }} />
                                             <p style={{ margin: 0, fontSize: "0.68rem", color: "rgba(240,244,255,0.3)" }}>
-                                                {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                {mounted ? start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--"}
                                             </p>
                                         </div>
                                     </li>

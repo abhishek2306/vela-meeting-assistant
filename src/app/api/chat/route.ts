@@ -85,54 +85,30 @@ The user is talking to you directly. Help them manage their meetings, schedule, 
 
 ### CORE INTELLIGENCE:
 1. **Multilingual Support**: Detect the language used by the user. Respond in the SAME language unless requested otherwise.
-2. **Sentiment Awareness**: Be empathetic and professional. If the user seems stressed or a meeting was tense, acknowledge the vibe in your tone.
+2. **Sentiment Awareness**: Be empathetic and professional.
 
-If the user asks you to do a specific action, you MUST output a raw JSON object and nothing else.
-Here are the commands you support:
+### INTERNAL COMMAND PROTOCOL:
+If the user asks you to do a specific action, you MUST output a raw JSON object and NOTHING else. 
+- **DO NOT include any conversational preamble or preamble text**. 
+- **DO NOT guess or fabricate email addresses**. 
+- **NO PLACEHOLDERS**: Never use "REPLACEMENT_EMAIL@REAL_DOMAIN.COM" or similar. Use real emails from history or SEARCH_CONTACT.
+- **Year Assumption**: Always assume the current year (${new Date().getFullYear()}) if not specified.
+- **ALWAYS use SEARCH_CONTACT** if you need an email but don't have it.
 
-1. FETCH_SCHEDULE: Use this if the user asks about their upcoming meetings or what's on their calendar.
-   JSON: { "command": "FETCH_SCHEDULE" }
+Supported Commands:
+1. FETCH_SCHEDULE: { "command": "FETCH_SCHEDULE" }
+2. JOIN_MEETING: { "command": "JOIN_MEETING", "url": "..." }
+3. SEARCH_CONTACT: { "command": "SEARCH_CONTACT", "name": "...", "nextAction": "SCHEDULE_MEETING", "context": "..." }
+4. SCHEDULE_MEETING: { "command": "SCHEDULE_MEETING", "title": "...", "durationMinutes": 30, "attendeeEmails": ["..."], "startTime": "ISO_8601" }
+5. CANCEL_MEETING: { "command": "CANCEL_MEETING", "titleKeyword": "...", "startTime": "ISO_DATE" }
+6. FETCH_MOM: { "command": "FETCH_MOM", "keyword": "...", "timeHint": "HH:MM", "attendeeName": "..." }
+7. SEND_MOM: { "command": "SEND_MOM", "keyword": "...", "recipientNames": ["..."], "recipientEmails": [] }
+8. FETCH_TRANSCRIPT: { "command": "FETCH_TRANSCRIPT", "keyword": "..." }
+9. SUBMIT_TRANSCRIPT: { "command": "SUBMIT_TRANSCRIPT", "meetingTitle": "...", "transcriptText": "..." }
+10. SYNC_TRANSCRIPTS: { "command": "SYNC_TRANSCRIPTS", "hoursBack": 24 }
+11. LIST_CONTACTS: { "command": "LIST_CONTACTS", "includeUnknown": false }
 
-2. JOIN_MEETING: Use this if the user asks you to send the bot to join a specific meeting.
-   JSON: { "command": "JOIN_MEETING", "url": "https://meet.google.com/..." }
-
-3. SEARCH_CONTACT: Use this if the user wants to invite someone by name but hasn't provided their email address.
-   JSON: { "command": "SEARCH_CONTACT", "name": "John Doe", "nextAction": "SCHEDULE_MEETING", "context": "Meeting about project X for tomorrow" }
-
-4. SCHEDULE_MEETING: Use this if the user asks to schedule a new meeting AND you have all required email addresses.
-   JSON: { "command": "SCHEDULE_MEETING", "title": "Meeting Title", "durationMinutes": 30, "attendeeEmails": ["email@example.com"] }
-   (If they specify a time, add "startTime" in ISO 8601 format WITH the user's timezone offset, e.g. "2026-03-13T00:15:00+05:30". NEVER convert to UTC yourself — always include the offset. If no time is specified, assume 1 hour from now using the same offset format.)
-
-5. CANCEL_MEETING: Use this if the user asks to cancel, delete, or remove an existing meeting.
-   JSON: { "command": "CANCEL_MEETING", "titleKeyword": "keyword from meeting title or person's name", "startTime": "YYYY-MM-DDTHH:mm:00Z" }
-
-6. FETCH_MOM: Use this if the user asks to see, show, retrieve, or read the Minutes of Meeting (MoM), summary, action items, or decisions for a meeting.
-   JSON: { "command": "FETCH_MOM", "keyword": "partial meeting title keyword or empty", "timeHint": "HH:MM or YYYY-MM-DDTHH:mm:00Z if user mentions a time", "attendeeName": "name of person in the meeting if mentioned" }
-   Examples: 'latest MoM' → keyword:"latest"; '3pm meeting' → timeHint:"15:00"; 'meeting with Nikita' → attendeeName:"Nikita"
-
-7. SEND_MOM: Use this if the user asks to send, email, or share the MoM or meeting minutes to someone.
-   JSON: { "command": "SEND_MOM", "keyword": "partial meeting title keyword or empty", "timeHint": "HH:MM or datetime if mentioned", "recipientNames": ["Name1", "Name2"], "recipientEmails": ["known@email.com"] }
-   - Put ALL named recipients in recipientNames[] (e.g. ["Nikita", "Vishal"]). NEVER guess or fabricate email addresses.
-   - Only put emails in recipientEmails[] if the user explicitly typed an email address.
-   - Leave recipientEmails as [] if no email was given — the system will look them up from contacts.
-
-11. LIST_CONTACTS: Use this if the user asks to see, list, or review their contacts, email addresses, or connections.
-   JSON: { "command": "LIST_CONTACTS", "includeUnknown": false }
-   (Set includeUnknown to true only if the user specifically asks to see "all", "hidden", or "unknown" email addresses.)
-
-8. FETCH_TRANSCRIPT: Use this if the user asks what was discussed, said, or talked about in a meeting, or wants to see the raw transcript.
-   JSON: { "command": "FETCH_TRANSCRIPT", "keyword": "partial meeting title keyword or empty", "timeHint": "HH:MM or datetime if mentioned", "attendeeName": "attendee name if mentioned" }
-
-9. SUBMIT_TRANSCRIPT: Use this if the user pastes meeting notes, a transcript, or says something like "here are the notes from..." or "generate MoM from this...". The transcript text is whatever the user pasted.
-   JSON: { "command": "SUBMIT_TRANSCRIPT", "meetingTitle": "meeting name if mentioned", "transcriptText": "the full pasted transcript or notes" }
-
-10. SYNC_TRANSCRIPTS: Use this if the user asks to sync, fetch, pull, or check for transcripts from Google Drive, or says something like "check my recent meetings for transcripts".
-   JSON: { "command": "SYNC_TRANSCRIPTS", "hoursBack": 24 }
-
-IMPORTANT RULES:
-- Always confirm the meeting title (subject) and time with the user before scheduling, UNLESS they explicitly provided them in their original message.
-- If you find an email address via SEARCH_CONTACT, your first response should be "I've found the email: [email]. Should I go ahead and schedule the meeting for [time], or would you like to use a different subject/time?"
-- If the user is just chatting normally, or answering a question you asked, output a helpful reply in plain text.
+IMPORTANT: Confirm title/time UNLESS provided. If email is found via SEARCH_CONTACT, confirm before scheduling.
 
 Prior Conversation History:
 ${historyText}
@@ -144,8 +120,14 @@ Current User message: "${userPromptWithContext}"
 
         let command = null;
         try {
-            const jsonStr = responseText.replace(/```json/g, '').replace(/```/g, '');
-            command = JSON.parse(jsonStr);
+            // Robust JSON extraction: look for the first JSON object block
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const cleanedJson = jsonMatch[0].trim();
+                command = JSON.parse(cleanedJson);
+            } else {
+                throw new Error("No JSON found");
+            }
         } catch (parseError) {
             // This is just a plain chat reply
             await prisma.chatMessage.create({
@@ -237,7 +219,12 @@ Current User message: "${userPromptWithContext}"
                 if (!email) {
                     finalReplyText = `I couldn't find an email address for "${queryName}" in your contacts. Could you provide their email address?`;
                 } else if (command.nextAction === "SCHEDULE_MEETING") {
-                    finalReplyText = `I found ${queryName}'s email: **${email}**. I'm ready to schedule the meeting, but I'll need a title and time first. \n\nWhat would you like the subject to be, and what time should I set?`;
+                    const ctx = command.context ? ` for **"${command.context}"**` : "";
+                    if (ctx) {
+                        finalReplyText = `I found ${queryName}'s email: **${email}**. I'm ready to schedule the meeting${ctx}.\n\nShould I go ahead and book this for you?`;
+                    } else {
+                        finalReplyText = `I found ${queryName}'s email: **${email}**. I'm ready to schedule the meeting, but I'll need a title and time first. \n\nWhat would you like the subject to be, and what time should I set?`;
+                    }
                 } else {
                     finalReplyText = `I found ${queryName}'s email address: ${email}`;
                 }
