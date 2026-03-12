@@ -3,12 +3,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Zap, User, Sparkles, Trash2, Paperclip, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import * as mammoth from "mammoth";
-import * as pdfjsLib from "pdfjs-dist";
-
-// Set up PDF.js worker
-if (typeof window !== "undefined") {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-}
 
 interface Attachment {
     name: string;
@@ -389,6 +383,11 @@ export function Chatbot() {
                 newAttachments.push({ name: file.name, type: "text/plain", data: result.value });
             } else if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
                 const arrayBuffer = await file.arrayBuffer();
+                // Dynamically import pdfjs-dist to prevent Next.js SSR reference errors (DOMMatrix)
+                const pdfjsLib = await import("pdfjs-dist");
+                if (typeof window !== "undefined") {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+                }
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 let fullText = "";
                 for (let i = 1; i <= pdf.numPages; i++) {
