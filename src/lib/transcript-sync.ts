@@ -159,12 +159,13 @@ async function processAndSaveDriveTranscript(
     // 4. Summarize (MoM)
     try {
         const momData = await generateMoM(transcriptText, meetingInfo.title);
-        await prisma.moM.create({
+        await (prisma.moM as any).create({
             data: {
                 meetingId: meetingId!,
                 summary: momData.summary || "",
-                actionItems: JSON.stringify(momData.actionItems || []),
-                decisions: JSON.stringify(momData.decisions || []),
+                actionItems: momData.actionItems || "",
+                decisions: momData.decisions || "",
+                sentiment: momData.sentiment || "Neutral",
             },
         });
         result.synced++;

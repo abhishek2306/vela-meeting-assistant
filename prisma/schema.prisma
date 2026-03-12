@@ -109,6 +109,7 @@ model MoM {
   summary     String
   actionItems String
   decisions   String
+  sentiment   String?  // e.g. "Positive, Collaborative", "Urgent, Productive"
   createdAt   DateTime @default(now())
   
   meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)

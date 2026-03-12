@@ -9,10 +9,14 @@ export async function generateMoM(transcript: string, meetingTitle: string) {
 You are an expert executive assistant. I am providing you with the raw transcript from a meeting titled "${meetingTitle}".
 Your task is to generate a professional, structured Minutes of Meeting (MoM) from this transcript.
 
-Extract and format exactly the following 3 sections:
+### CRITICAL INSTRUCTIONS:
+1. **Language Detection**: Detect the primary language of the transcript. Respond in THAT SAME LANGUAGE unless specifically asked otherwise.
+2. **Sentiment Analysis**: Analyze the overall tone, energy, and "vibe" of the meeting (e.g., Collaborative, Urgent, Tense, Productive, etc.).
+
+Extract and format exactly the following 4 sections:
 
 ### Summary
-[Write a concise 2-3 paragraph summary of the main topics discussed, the overall tone, and the primary objective of the meeting.]
+[Write a concise 2-3 paragraph summary of the main topics discussed and the primary objective of the meeting.]
 
 ### Decisions Made
 [Create a bulleted list of any firm decisions, agreements, or conclusions reached by the participants. If none, write "No major decisions recorded."]
@@ -24,6 +28,9 @@ Extract and format exactly the following 3 sections:
 1. Action item 1
 2. Action item 2
 
+### Sentiment
+[Provide a short label and 1-sentence description of the meeting vibe, e.g., "Highly Productive: The team was aligned and moved quickly through all agenda items."]
+
 ---
 TRANSCRIPT:
 ${transcript}
@@ -33,15 +40,16 @@ ${transcript}
         const text = await generateWithFailover(prompt);
 
         // Basic parser to split the text back into our database fields
-        // This assumes the LLM strictly follows the ### Header structure
         const summaryMatch = text.match(/### Summary\n([\s\S]*?)(?=### Decisions Made)/);
         const decisionsMatch = text.match(/### Decisions Made\n([\s\S]*?)(?=### Action Items)/);
-        const actionItemsMatch = text.match(/### Action Items\n([\s\S]*)$/);
+        const actionItemsMatch = text.match(/### Action Items\n([\s\S]*?)(?=### Sentiment)/);
+        const sentimentMatch = text.match(/### Sentiment\n([\s\S]*)$/);
 
         return {
             summary: summaryMatch ? summaryMatch[1].trim() : "Summary could not be generated.",
             decisions: decisionsMatch ? decisionsMatch[1].trim() : "No decisions recorded.",
             actionItems: actionItemsMatch ? actionItemsMatch[1].trim() : "No action items recorded.",
+            sentiment: sentimentMatch ? sentimentMatch[1].trim() : "Neutral",
         };
     } catch (error) {
         console.error("Error generating MoM from Gemini:", error);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Zap, User, Sparkles, Trash2, Paperclip, Mic, MicOff } from "lucide-react";
+import { Send, Zap, User, Sparkles, Trash2, Paperclip, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 
 interface Attachment {
     name: string;
@@ -25,6 +25,7 @@ export function Chatbot() {
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [isListening, setIsListening] = useState(false);
+    const [isSpeechEnabled, setIsSpeechEnabled] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -165,12 +166,27 @@ export function Chatbot() {
 
         recognitionRef.current = recognition;
         recognition.start();
+
+        // If speaking, stop it
+        window.speechSynthesis.cancel();
         setIsListening(true);
     }, [isListening]);
 
+    const speak = (text: string) => {
+        if (!isSpeechEnabled) return;
+        window.speechSynthesis.cancel(); // Stop current speech
+        const utterance = new SpeechSynthesisUtterance(text.replace(/\*\*/g, "")); // Clean markdown from speech
+        utterance.rate = 1.1;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+    };
+
     // Cleanup on unmount
     useEffect(() => {
-        return () => { recognitionRef.current?.stop(); };
+        return () => { 
+            recognitionRef.current?.stop(); 
+            window.speechSynthesis.cancel();
+        };
     }, []);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -240,6 +256,7 @@ export function Chatbot() {
             if (!response.ok) throw new Error(data.error || "Failed to send message");
 
             setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+            speak(data.reply);
 
             // If it was a new session, update state and refresh sidebar
             if (data.sessionId && !currentSessionId) {
@@ -639,6 +656,30 @@ export function Chatbot() {
                             {isListening
                                 ? <MicOff style={{ width: "18px", height: "18px" }} />
                                 : <Mic style={{ width: "18px", height: "18px" }} />
+                            }
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsSpeechEnabled(!isSpeechEnabled)}
+                            title={isSpeechEnabled ? "Disable voice output" : "Enable voice output"}
+                            style={{
+                                width: "40px", height: "40px", borderRadius: "12px",
+                                background: isSpeechEnabled ? "rgba(167,139,250,0.15)" : "rgba(255,255,255,0.05)",
+                                border: isSpeechEnabled ? "1px solid rgba(167,139,250,0.5)" : "1px solid rgba(255,255,255,0.1)",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                cursor: "pointer",
+                                color: isSpeechEnabled ? "#a78bfa" : "rgba(255,255,255,0.4)",
+                                flexShrink: 0,
+                                transition: "all 0.2s",
+                                boxShadow: isSpeechEnabled ? "0 0 12px rgba(167,139,250,0.3)" : "none",
+                            }}
+                            onMouseEnter={e => !isSpeechEnabled && (e.currentTarget.style.color = "#f0f4ff")}
+                            onMouseLeave={e => !isSpeechEnabled && (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}
+                        >
+                            {isSpeechEnabled
+                                ? <Volume2 style={{ width: "18px", height: "18px" }} />
+                                : <VolumeX style={{ width: "18px", height: "18px" }} />
                             }
                         </button>
 

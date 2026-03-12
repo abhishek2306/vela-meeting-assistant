@@ -83,6 +83,10 @@ Today's current date and time is: ${now.toISOString()}.
 The user's local timezone offset is: ${tzOffsetStr} (e.g. IST is +05:30).
 The user is talking to you directly. Help them manage their meetings, schedule, and meeting records.
 
+### CORE INTELLIGENCE:
+1. **Multilingual Support**: Detect the language used by the user. Respond in the SAME language unless requested otherwise.
+2. **Sentiment Awareness**: Be empathetic and professional. If the user seems stressed or a meeting was tense, acknowledge the vibe in your tone.
+
 If the user asks you to do a specific action, you MUST output a raw JSON object and nothing else.
 Here are the commands you support:
 
@@ -301,7 +305,8 @@ Current User message: "${userPromptWithContext}"
                     finalReplyText = `Here are the **Minutes of Meeting** for **"${meeting.title}"**:\n\n` +
                         `**📋 Summary**\n${mom.summary}\n\n` +
                         `**✅ Decisions Made**\n${mom.decisions}\n\n` +
-                        `**📌 Action Items**\n${mom.actionItems}`;
+                        `**📌 Action Items**\n${mom.actionItems}\n\n` +
+                        `**📊 Meeting Vibe**\n${mom.sentiment || "Neutral"}`;
                 }
             }
 
@@ -399,12 +404,13 @@ Current User message: "${userPromptWithContext}"
 
                     try {
                         const momData = await generateMoM(transcriptText, meetingTitle);
-                        await prisma.moM.create({
+                        await (prisma.moM as any).create({
                             data: {
                                 meetingId: meeting.id,
                                 summary: momData.summary || "",
-                                actionItems: JSON.stringify(momData.actionItems || []),
-                                decisions: JSON.stringify(momData.decisions || []),
+                                actionItems: momData.actionItems || "",
+                                decisions: momData.decisions || "",
+                                sentiment: momData.sentiment || "Neutral",
                             },
                         });
                         finalReplyText = `✅ Got it! I've saved the transcript for **"${meetingTitle}"** and generated the Minutes of Meeting.\n\n` +
