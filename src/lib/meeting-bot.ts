@@ -280,47 +280,63 @@ export class MeetingBot {
         await this.page.evaluate(() => {
             const observer = new MutationObserver((mutations) => {
                 mutations.forEach((mutation) => {
-                    const nodes = Array.from(mutation.addedNodes) as HTMLElement[];
-                    nodes.forEach(node => {
-                        // Look for caption blocks
-                        // Usually have aria-label or specific classes
-                        if (node.tagName === 'DIV' && (node.innerText || node.textContent)) {
-                            // Find the container that has speaker and text
-                            const speakerEl = node.querySelector('.uS79f, .ZS79f, .poFWrd'); // Common speaker classes
-                            const textEl = node.querySelector('.VpW9d, .iO9X6b, .CNusmb');   // Common text classes
+                    // Handle both added nodes and text updates
+                    let targetNodes: Node[] = [];
+                    if (mutation.type === 'childList') {
+                        targetNodes = Array.from(mutation.addedNodes);
+                    } else if (mutation.type === 'characterData') {
+                        targetNodes = [mutation.target.parentNode as Node].filter(Boolean);
+                    }
+
+                    targetNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const el = node as HTMLElement;
+                            
+                            // FALLBACK ENHANCEMENT: Block interactive UI elements from being processed as text
+                            if (el.closest('button, a, [role="button"], [role="menu"], [role="menuitem"], [role="dialog"], [role="tooltip"], nav, header')) return;
+                            
+                            const innerText = el.innerText || el.textContent || "";
+                            if (!innerText.trim()) return;
+
+                            // Google Meet UI elements to ignore
+                            const ignoreList = [
+                                "BETA", "Font size", "Font color", "Open caption settings", "Meeting timer", 
+                                "Press Down", "Hand raises", "Turn off captions", "No one else is in", 
+                                "You left the", "Return to home", "Submit feedback", "Your meeting is safe", 
+                                "Learn more", "People", "Open settings", "Backgrounds and effects", 
+                                "More options", "visual_effects", "frame_person", "Raise hand", 
+                                "Others might still see", "more_vert", "Reframe"
+                            ];
+                            if (ignoreList.some(ignore => innerText.includes(ignore))) return;
+
+                            // Find the container that has speaker and text (Standard extraction)
+                            const speakerEl = el.querySelector('.uS79f, .ZS79f, .poFWrd, .VUS6L, [jsname="YSN1pb"]'); 
+                            const textEl = el.querySelector('.VpW9d, .iO9X6b, .CNusmb, .LTfRof, .i4ebvc, .ZQqIt');   
                             
                             let speaker = "Unknown";
                             let text = "";
 
-                            if (textEl) {
+                            if (textEl && speakerEl) {
                                 speaker = speakerEl?.textContent?.trim() || "Unknown";
                                 text = textEl.textContent?.trim() || "";
                             } else {
-                                // FALLBACK: Google Meet changed CSS classes. Grab raw text but filter aggressively.
-                                // Don't process menus, dialogs, or tooltips
-                                if (node.closest('[role="menu"], [role="dialog"], [role="tooltip"], nav, header')) return;
-
-                                const innerText = node.innerText || node.textContent || "";
-                                
-                                // Google Meet UI elements to ignore
-                                const ignoreList = ["BETA", "Font size", "Font color", "Open caption settings", "Meeting timer", "Press Down Arrow", "Hand raises", "Turn off captions", "No one else is in this meeting", "You left the meeting", "Return to home screen", "Submit feedback", "Your meeting is safe", "Learn more", "People", "Open settings"];
-                                if (ignoreList.some(ignore => innerText.includes(ignore))) return;
-
+                                // FALLBACK: Grab raw text safely
                                 const parts = innerText.split('\\n').map(p => p.trim()).filter(p => p.length > 0);
                                 if (parts.length > 1 && parts[0].length < 40) {
                                     speaker = parts[0];
                                     text = parts.slice(1).join(' ');
-                                } else if (parts.length === 1 && parts[0].split(' ').length > 2) {
+                                } else if (parts.length === 1 && parts[0].split(' ').length > 1) {
+                                    // Allow 2+ words (e.g. "Yeah sure") to be captured if there's no speaker
                                     text = parts[0];
                                 } else {
-                                    return; // Skip short single words which are likely UI labels
+                                    return; // Skip 1-word text outside standard containers, it's almost certainly a UI icon or label
                                 }
                             }
 
                             // Clean up text
                             text = text.replace(/\\s+/g, ' ').trim();
 
-                            if (text && text.length > 0) {
+                            if (text && text.length > 1) {
                                 (window as any).onCaptionUpdate(speaker, text);
                             }
                         }
@@ -329,8 +345,8 @@ export class MeetingBot {
             });
 
             // Target the caption container
-            const target = document.body; // Safer to start wide or find the specific container
-            observer.observe(target, { childList: true, subtree: true });
+            const target = document.body; 
+            observer.observe(target, { childList: true, subtree: true, characterData: true });
         });
     }
 
