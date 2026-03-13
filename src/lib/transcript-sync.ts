@@ -146,7 +146,18 @@ async function processAndSaveDriveTranscript(
         meetingId = meeting.id;
     }
 
-    // 3. Save Transcript - Use 'any' for driveFileId
+    // 3. Check if Transcript already exists to prevent Unique Constraint failure
+    const existingTranscript = await (prisma.transcript as any).findFirst({
+        where: { driveFileId: driveFile.fileId }
+    });
+
+    if (existingTranscript) {
+        console.log(`[Transcript Sync] Transcript ${driveFile.fileId} already exists in DB. Skipping creation.`);
+        result.skipped++;
+        return;
+    }
+
+    // 4. Save Transcript - Use 'any' for driveFileId
     await (prisma.transcript as any).create({
         data: {
             meetingId: meetingId!,
