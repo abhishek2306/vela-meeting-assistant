@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { generateWithFailover } from "@/lib/gemini-client";
-import { getUpcomingEvents, scheduleMeeting, searchContactByName, listContacts, cancelMeeting, sendEmail } from "@/lib/google-api";
+import { getUpcomingEvents, scheduleMeeting, searchContactByName, listContacts, cancelMeeting, sendEmail, getMeetingDetailsByKeyword } from "@/lib/google-api";
 import { runMeetingBot } from "@/lib/bot/BotRunner";
 import { syncRecentMeetingTranscripts } from "@/lib/transcript-sync";
 import { generateMoM } from "@/lib/gemini";
@@ -106,8 +106,9 @@ Supported Commands:
 9. SUBMIT_TRANSCRIPT: { "command": "SUBMIT_TRANSCRIPT", "meetingTitle": "...", "transcriptText": "..." }
 10. SYNC_TRANSCRIPTS: { "command": "SYNC_TRANSCRIPTS", "hoursBack": 24 }
 11. LIST_CONTACTS: { "command": "LIST_CONTACTS", "includeUnknown": false }
+12. GET_MEETING_DETAILS: { "command": "GET_MEETING_DETAILS", "keyword": "..." }
 
-IMPORTANT: Confirm title/time UNLESS provided. If email is missing, you MUST call \`SEARCH_CONTACT\` first. Always assume current year.
+IMPORTANT: Confirm title/time UNLESS provided. If email is missing, you MUST call \`SEARCH_CONTACT\` first. Always assume current year. If a user asks who is attending or what is the agenda of a meeting, use \`GET_MEETING_DETAILS\`.
 
 Prior Conversation History:
 ${historyText}
@@ -204,9 +205,39 @@ Current User message: "${userPromptWithContext}"
                     finalReplyText = "You don't have any upcoming meetings scheduled right now.";
                 } else {
                     const eventText = events.map((e: any) =>
-                        `- **${e.summary}** at ${new Date(e.start.dateTime || e.start.date).toLocaleString()}`
+                        `- **${e.summary}** at ${new Date(e.start.dateTime || e.start.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
                     ).join("\n");
-                    finalReplyText = `Here are your upcoming meetings:\n${eventText}`;
+                    finalReplyText = `Here are your upcoming meetings:\n${eventText}\n\n*(You can ask me for details on any of these, like "Who is attending the ${events[0].summary} meeting?")*`;
+                }
+            }
+
+            // ── GET_MEETING_DETAILS ─────────────────────────────────────────────
+            else if (command.command === "GET_MEETING_DETAILS") {
+                const kw = command.keyword || "";
+                if (!kw) {
+                    finalReplyText = "Which meeting would you like details for?";
+                } else {
+                    const event = await getMeetingDetailsByKeyword(accessToken, kw);
+                    if (!event) {
+                        finalReplyText = `I couldn't find an upcoming meeting matching **"${kw}"**.`;
+                    } else {
+                        const title = event.summary || "Untitled Meeting";
+                        const start = new Date(event.start?.dateTime || event.start?.date || "").toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
+                        const description = event.description || "_No agenda or description provided._";
+                        const location = event.location || "_No location set._";
+                        const meetLink = event.hangoutLink || "No Meet link";
+                        
+                        const attendees = (event.attendees || []).map((a: any) => 
+                            `- ${a.displayName || a.email.split('@')[0]} (${a.email}) ${a.responseStatus === 'accepted' ? '✅' : a.responseStatus === 'declined' ? '❌' : '⏳'}`
+                        ).join("\n") || "_No other attendees listed._";
+
+                        finalReplyText = `## Meeting Details: ${title}\n` +
+                            `**📅 Time:** ${start}\n` +
+                            `**📍 Location:** ${location}\n` +
+                            `**🔗 Meet:** ${meetLink}\n\n` +
+                            `**📝 Agenda/Description:**\n${description}\n\n` +
+                            `**👥 Participants:**\n${attendees}`;
+                    }
                 }
             }
 

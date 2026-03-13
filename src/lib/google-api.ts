@@ -201,6 +201,35 @@ export async function cancelMeeting(
 }
 
 /**
+ * Searches for a single upcoming or past meeting by keyword and returns full details.
+ */
+export async function getMeetingDetailsByKeyword(accessToken: string, keyword: string) {
+    const auth = getGoogleAuthClient(accessToken);
+    const calendar = google.calendar({ version: "v3", auth });
+
+    // Search both past (short window) and future events
+    const now = new Date();
+    const rangeStart = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 1 day back
+    const rangeEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days forward
+
+    const response = await calendar.events.list({
+        calendarId: "primary",
+        timeMin: rangeStart.toISOString(),
+        timeMax: rangeEnd.toISOString(),
+        maxResults: 10,
+        singleEvents: true,
+        orderBy: "startTime",
+        q: keyword,
+    });
+
+    const events = response.data.items || [];
+    if (events.length === 0) return null;
+
+    // Return the best match (first one from the keyword search)
+    return events[0];
+}
+
+/**
  * Fetches a list of the user's top contacts (names and emails).
  */
 export async function listContacts(accessToken: string, maxResults = 250): Promise<Array<{ name: string; email: string }>> {
