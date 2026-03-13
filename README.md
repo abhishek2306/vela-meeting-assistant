@@ -19,7 +19,10 @@
 | **Smart Meeting Search** | Find meetings by title keyword, time ("the 3pm meeting"), or attendee name |
 | **Chat History & Sessions** | All conversations persist to the database; switch or delete sessions from the sidebar |
 | **Calendar View** | See upcoming meetings with "Today" badges and one-click Google Meet join links |
-| **Multi-model AI Failover** | Automatically rotates Gemini models if one hits its rate limit |
+| **Live Bot (Vela Assistant)** | Puppeteer-based bot that joins Google Meet, enables captions, and captures live speech |
+| **Deduplication Engine** | Self-aware transcript engine that cleans up fragmented snapshots into cohesive sentences |
+| **Stealth Mode** | Hardened evasion techniques to prevent Google Meet from blocking the bot |
+| **Multi-model AI Failover** | Automatically rotates Gemini models (2.5, 2.0, 1.5) if one hits its rate limit |
 
 ---
 
@@ -41,7 +44,7 @@ graph TD
         ChatAPI["/api/chat — Command Router"]
         SessionsAPI["/api/chat/sessions — History CRUD"]
         SyncAPI["/api/sync-transcripts — Drive Sync"]
-        Webhook["/api/webhooks/bot — Bot Receiver"]
+        BotAPI["/api/meetings/bot — Live Bot Control"]
     end
 
     subgraph "Intelligence"
@@ -70,8 +73,8 @@ graph TD
     SyncAPI --> GDrive
     SyncAPI --> Gemini
     SyncAPI --> DB
-    Webhook --> Gemini
-    Webhook --> DB
+    BotAPI --> Gemini
+    BotAPI --> DB
     SessionsAPI --> DB
     ChatAPI --> DB
 ```
@@ -217,9 +220,9 @@ Vela cycles through Gemini models automatically if one hits its rate limit:
 
 ```
 gemini-2.5-flash        → Best quality (tried first)
-gemini-2.5-flash-lite   → Fallback
-gemini-3.0-flash        → Fallback
-gemini-3.1-flash-lite   → Most generous free quota (last resort)
+gemini-2.0-flash        → High-speed fallback
+gemini-2.0-flash-lite   → Resource-efficient fallback
+gemini-1.5-flash        → Legacy fallback (high quota)
 ```
 
 To override the priority without changing code, add to `.env.local`:
@@ -260,9 +263,7 @@ ai-meeting-assistant/
     │   └── Providers.tsx        # NextAuth SessionProvider wrapper
     └── lib/
         ├── auth.ts              # NextAuth config: Google OAuth, JWT callbacks, token refresh
-        ├── bot/
-        │   ├── BotRunner.ts         # Puppeteer-based Google Meet bot launcher
-        │   └── GoogleMeetScraper.ts # Live caption scraper inside Meet
+        ├── meeting-bot.ts       # Main Puppeteer bot engine (Stealth, Captions, Deduplication)
         ├── gemini-client.ts     # Multi-model Gemini failover wrapper (text + multimodal image)
         ├── gemini.ts            # MoM generation prompt builder + structured response parser
         ├── google-api.ts        # Google Calendar, Gmail, People API utility functions
@@ -343,8 +344,9 @@ The application uses **SQLite** via **Prisma ORM**. Key models:
 - [x] Manual transcript paste → MoM generation
 - [x] File & Image upload (multimodal Gemini vision)
 - [x] Voice-to-text input (Web Speech API)
+- [x] Puppeteer bot joining live Google Meet sessions
+- [x] Smart transcript deduplication & UI noise filtering
 - [ ] Deployment guide (Vercel / Railway / Docker)
-- [ ] Puppeteer bot joining live Google Meet sessions
 
 ---
 
