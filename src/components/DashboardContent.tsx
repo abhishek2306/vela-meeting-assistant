@@ -83,10 +83,16 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
     const handleStopBot = async (eventId: string) => {
         try {
             setBotStatus("Stopping...");
-            await fetch(`/api/meetings/bot?id=${eventId}`, { method: "DELETE" });
+            const res = await fetch(`/api/meetings/bot?id=${eventId}`, { method: "DELETE" });
+            const data = await res.json().catch(() => ({}));
             setActiveBotId(null);
             setBotStatus("");
-            alert("Meeting ended. Generating summary... You'll see it in your chat shortly.");
+            
+            if (data.transcriptLength > 50) {
+                alert(`Meeting ended. Captured ${data.transcriptLength} characters. Generating summary...`);
+            } else {
+                alert(`Meeting ended but no transcript was captured (length: ${data.transcriptLength || 0}). Make sure captions were turned on and people spoke.`);
+            }
         } catch (error) {
             console.error(error);
             setBotStatus("Error stopping");

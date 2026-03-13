@@ -1,6 +1,11 @@
-import puppeteer, { Page, Browser } from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { Page, Browser } from 'puppeteer';
 import path from 'path';
 import fs from 'fs';
+
+// Force register plugin once
+let stealthInitialized = false;
 
 interface BotConfig {
     meetingUrl: string;
@@ -25,6 +30,11 @@ export class MeetingBot {
     async start() {
         this.status = "Launching Engine...";
         console.log(`[Bot] Starting for meeting: ${this.config.meetingUrl}`);
+        
+        if (!stealthInitialized) {
+            puppeteer.use(StealthPlugin());
+            stealthInitialized = true;
+        }
 
         const baseDataDir = path.join(process.cwd(), 'puppeteer_data');
         if (!fs.existsSync(baseDataDir)) fs.mkdirSync(baseDataDir);
@@ -77,27 +87,9 @@ export class MeetingBot {
 
         if (!this.page) throw new Error("Could not initialize browser page.");
 
-        // Manual Stealth Injection (Webpack Safe bypass for puppeteer-extra-plugin-stealth)
-        await this.page.evaluateOnNewDocument(() => {
-            // Webdriver bypass
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            // Chrome object bypass
-            (window as any).chrome = { runtime: {} };
-            // Language bypass
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-            // Plugins bypass
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-            // Permissions bypass
-            const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
-            (window.navigator.permissions as any).query = (parameters: any) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-        });
-
-        // Set a more modern and realistic User Agent
-        const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+        // Use dynamic User Agent from the real browser to avoid "outdated browser" blocks
+        const defaultUA = await this.browser.userAgent();
+        const userAgent = defaultUA.replace(/HeadlessChrome/g, 'Chrome');
         await this.page.setUserAgent(userAgent);
 
 
@@ -132,15 +124,16 @@ export class MeetingBot {
         }
         
         // Final check for immediate blocks
-        const isBlocked = await this.page.evaluate(() => {
+        const blockedInfo = await this.page.evaluate(() => {
             const body = document.body?.innerText || "";
-            return body.includes("You can't join this video call") || 
-                   body.includes("automated queries") ||
-                   body.includes("Return to home screen");
+            const isBlocked = body.includes("You can't join this video call") || 
+                              body.includes("automated queries") ||
+                              body.includes("Return to home screen");
+            return { isBlocked, textPreview: body.slice(0, 150) };
         });
 
-        if (isBlocked) {
-            console.error("[Bot] ❌ Immediate Block Detected by Google Meet.");
+        if (blockedInfo.isBlocked) {
+            console.error(`[Bot] ❌ Immediate Block Detected. Text seen: ${blockedInfo.textPreview.replace(/\\n/g, ' ')}...`);
             this.status = "Access Denied";
             await this.stop(); 
             throw new Error("ACCESS_DENIED_BY_GOOGLE");
@@ -166,27 +159,33 @@ export class MeetingBot {
                 throw new Error("ACCESS_DENIED_BY_GOOGLE");
             }
 
-            // 1. Mute Mic and Camera immediately
-            const micButton = 'div[aria-label*="microphone"][role="button"]';
-            const camButton = 'div[aria-label*="camera"][role="button"]';
-            
-            const page = this.page;
-            // Wait for either the mic button OR a possible error/login message
-            await page.waitForSelector(micButton, { timeout: 20000 }).catch(async () => {
-                console.log("[Bot] Mic button not found within 20s. Checking for blocks...");
-                const blocked = await page.evaluate(() => document.body?.innerText.includes("You can't join"));
-                if (blocked) throw new Error("ACCESS_DENIED_BY_GOOGLE");
-            });
-            
-            // Check if they are already off or on. Usually "Turn off microphone" vs "Turn on microphone"
-            const micStatus = await this.page.$eval(micButton, el => el.getAttribute('aria-label'));
-            if (micStatus?.toLowerCase().includes('turn off')) {
-                await this.page.click(micButton);
-            }
+            // 1. Handle potential "Continue without microphone and camera" prompts
+            await this.page.evaluate(() => {
+                const continueBtn = Array.from(document.querySelectorAll('span, button')).find(
+                    el => el.textContent?.includes('Continue without microphone')
+                ) as HTMLElement;
+                if (continueBtn) continueBtn.click();
+            }).catch(() => {});
 
-            const camStatus = await this.page.$eval(camButton, el => el.getAttribute('aria-label'));
-            if (camStatus?.toLowerCase().includes('turn off')) {
-                await this.page.click(camButton);
+            // 2. Mute Mic and Camera (Best Effort)
+            const micButton = 'div[aria-label*="microphone"][role="button"], button[aria-label*="microphone"]';
+            const camButton = 'div[aria-label*="camera"][role="button"], button[aria-label*="camera"]';
+            
+            try {
+                // Wait for the buttons, but don't crash if they don't appear (e.g., if permissions are permanently blocked by Google)
+                await this.page.waitForSelector(micButton, { timeout: 10000 });
+                
+                const micStatus = await this.page.$eval(micButton, el => el.getAttribute('aria-label'));
+                if (micStatus?.toLowerCase().includes('turn off')) {
+                    await this.page.click(micButton).catch(() => {});
+                }
+
+                const camStatus = await this.page.$eval(camButton, el => el.getAttribute('aria-label'));
+                if (camStatus?.toLowerCase().includes('turn off')) {
+                    await this.page.click(camButton).catch(() => {});
+                }
+            } catch (err) {
+                console.log("[Bot] Mic/Cam toggle buttons not found. Google Meet might have blocked hardware permissions or changed the UI. Proceeding to join anyway...");
             }
 
             // 2. Join the meeting
@@ -233,6 +232,18 @@ export class MeetingBot {
 
         } catch (error: any) {
             console.error("[Bot] Error during preparation:", error);
+            
+            // TAKE A SCREENSHOT FOR DEBUGGING
+            try {
+                if (this.page) {
+                    const errPath = path.join(process.cwd(), 'puppeteer_data', `error_${Date.now()}.png`);
+                    await this.page.screenshot({ path: errPath });
+                    console.log(`[Bot] 📸 Saved error screenshot to ${errPath}`);
+                }
+            } catch (screenshotErr) {
+                console.error("[Bot] Failed to take debug screenshot", screenshotErr);
+            }
+
             if (error.message === "ACCESS_DENIED_BY_GOOGLE") {
                 this.status = "Access Denied";
             } else {
@@ -275,13 +286,41 @@ export class MeetingBot {
                         // Usually have aria-label or specific classes
                         if (node.tagName === 'DIV' && (node.innerText || node.textContent)) {
                             // Find the container that has speaker and text
-                            // This structure is brittle but we can look for specific patterns
-                            const speakerEl = node.querySelector('.uS79f, .ZS79f'); // Common speaker classes
-                            const textEl = node.querySelector('.VpW9d, .iO9X6b');   // Common text classes
+                            const speakerEl = node.querySelector('.uS79f, .ZS79f, .poFWrd'); // Common speaker classes
+                            const textEl = node.querySelector('.VpW9d, .iO9X6b, .CNusmb');   // Common text classes
                             
+                            let speaker = "Unknown";
+                            let text = "";
+
                             if (textEl) {
-                                const speaker = speakerEl?.textContent?.trim() || "Unknown";
-                                const text = textEl.textContent?.trim() || "";
+                                speaker = speakerEl?.textContent?.trim() || "Unknown";
+                                text = textEl.textContent?.trim() || "";
+                            } else {
+                                // FALLBACK: Google Meet changed CSS classes. Grab raw text but filter aggressively.
+                                // Don't process menus, dialogs, or tooltips
+                                if (node.closest('[role="menu"], [role="dialog"], [role="tooltip"], nav, header')) return;
+
+                                const innerText = node.innerText || node.textContent || "";
+                                
+                                // Google Meet UI elements to ignore
+                                const ignoreList = ["BETA", "Font size", "Font color", "Open caption settings", "Meeting timer", "Press Down Arrow", "Hand raises", "Turn off captions", "No one else is in this meeting", "You left the meeting", "Return to home screen", "Submit feedback", "Your meeting is safe", "Learn more", "People", "Open settings"];
+                                if (ignoreList.some(ignore => innerText.includes(ignore))) return;
+
+                                const parts = innerText.split('\\n').map(p => p.trim()).filter(p => p.length > 0);
+                                if (parts.length > 1 && parts[0].length < 40) {
+                                    speaker = parts[0];
+                                    text = parts.slice(1).join(' ');
+                                } else if (parts.length === 1 && parts[0].split(' ').length > 2) {
+                                    text = parts[0];
+                                } else {
+                                    return; // Skip short single words which are likely UI labels
+                                }
+                            }
+
+                            // Clean up text
+                            text = text.replace(/\\s+/g, ' ').trim();
+
+                            if (text && text.length > 0) {
                                 (window as any).onCaptionUpdate(speaker, text);
                             }
                         }
@@ -312,15 +351,18 @@ export class MeetingBot {
         }
 
         // CLEANUP: Try to remove the session data directory
-        if (this.currentProfileDir && fs.existsSync(this.currentProfileDir)) {
-            try {
-                // Since this is Windows, sometimes files are locked for a few ms after close
-                setTimeout(() => {
-                    fs.rmSync(this.currentProfileDir, { recursive: true, force: true });
-                }, 1000);
-            } catch (err) {
-                console.log(`[Bot] Cleanup Warning: Could not delete ${this.currentProfileDir}:`, err);
-            }
+        if (this.currentProfileDir) {
+            const cleanupDir = this.currentProfileDir; // Capture in closure
+            // Since this is Windows, sometimes files are locked for a few ms after close
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(cleanupDir)) {
+                        fs.rmSync(cleanupDir, { recursive: true, force: true });
+                    }
+                } catch (err) {
+                    console.log(`[Bot] Cleanup Warning: Could not delete ${cleanupDir}`);
+                }
+            }, 2000);
         }
         this.status = "Stopped";
         return fullTranscript;

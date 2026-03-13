@@ -86,12 +86,12 @@ export async function DELETE(req: NextRequest) {
             const urlMatch = req.nextUrl.searchParams.get("id");
             let meetingId = urlMatch;
 
-            if (!meetingId) {
+            if (!meetingId || meetingId === "undefined") {
                 const newMeeting = await prisma.meeting.create({
                     data: {
                         userId: user.id,
                         title: "Live Meeting Audio Capture",
-                        url: "https://meet.google.com/...", // Placeholder
+                        url: "https://meet.google.com/",
                         startTime: new Date(),
                         endTime: new Date(),
                         status: "COMPLETED"
@@ -99,10 +99,27 @@ export async function DELETE(req: NextRequest) {
                 });
                 meetingId = newMeeting.id;
             } else {
-                await prisma.meeting.update({
-                    where: { id: meetingId },
-                    data: { status: "COMPLETED" }
-                });
+                // Check if it exists in local DB first
+                const existingMeeting = await prisma.meeting.findUnique({ where: { id: meetingId } });
+                if (existingMeeting) {
+                    await prisma.meeting.update({
+                        where: { id: meetingId },
+                        data: { status: "COMPLETED" }
+                    });
+                } else {
+                    // Create it if it was from a Google Calendar event that wasn't synced locally
+                    await prisma.meeting.create({
+                        data: {
+                            id: meetingId,
+                            userId: user.id,
+                            title: "Scheduled Live Meeting",
+                            url: `https://meet.google.com/`, 
+                            startTime: new Date(),
+                            endTime: new Date(),
+                            status: "COMPLETED"
+                        }
+                    });
+                }
             }
 
             // Save Transcript
