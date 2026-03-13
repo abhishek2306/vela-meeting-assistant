@@ -97,12 +97,16 @@ export class GoogleDriveProvider implements KnowledgeProvider {
 
                 const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer), disableWorker: true, useSystemFonts: true } as any);
                 const pdf = await loadingTask.promise;
+                console.log(`[DriveHub] Extracting ${pdf.numPages} pages from PDF: ${fileRes.data.name}`);
+                
                 let text = "";
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
-                    text += content.items.map((it: any) => it.str).join(" ") + " ";
+                    const pageText = content.items.map((it: any) => it.str).join(" ");
+                    text += pageText + " ";
                 }
+                console.log(`[DriveHub] PDF Extraction Complete: ${text.length} characters retrieved.`);
                 return text;
             }
 
