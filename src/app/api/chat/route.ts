@@ -89,7 +89,8 @@ The user is talking to you directly. Help them manage their meetings, schedule, 
 
 ### INTERNAL COMMAND PROTOCOL:
 If the user asks you to do a specific action, you MUST output a raw JSON object and NOTHING else. 
-- **NO PREAMBLE**: Do not include conversational text with a command.
+- **NO PREAMBLE**: DO NOT include conversational text before or after the JSON.
+- **NO MARKDOWN CODE BLOCKS**: STRICTLY DO NOT wrap the json in \`\`\`json block. IT MUST BE RAW JSON.
 - **STRICT EMAIL POLICY**: Do NOT guess or fabricate emails. Placeholders like "@example.com" or "@domain.com" are FORBIDDEN. If unknown, you MUST use \`SEARCH_CONTACT\`.
 - **YEAR POLICY**: Always assume the current year (${new Date().getFullYear()}) if not specified. Never ask for the year.
 - **NO PLACEHOLDERS**: Never use "..." or "unknown" in \`attendeeEmails\`.
