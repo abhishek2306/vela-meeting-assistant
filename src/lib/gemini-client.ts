@@ -12,10 +12,10 @@ const genAI = new GoogleGenerativeAI(apiKey);
  * All model names here are confirmed valid for the generateContent API.
  */
 const DEFAULT_MODEL_LIST = [
-    "gemini-2.5-flash",         // 20 RPD — best quality (try first if quota available)
-    "gemini-2.5-flash-lite",    // 20 RPD — available on this project
-    "gemini-3.0-flash",         // 20 RPD — "Gemini 3 Flash" in dashboard
-    "gemini-3.1-flash-lite",    // 500 RPD — most generous free quota!
+    "gemini-2.5-flash",         // Primary model (if available)
+    "gemini-2.0-flash",         // Reliable fast model
+    "gemini-2.0-flash-lite",    // Lightweight model
+    "gemini-1.5-flash",         // Fallback legacy flash model
 ];
 
 function getModelList(): string[] {
