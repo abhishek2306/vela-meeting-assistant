@@ -123,8 +123,13 @@ export async function DELETE(req: NextRequest) {
             }
 
             // Save Transcript
-            await prisma.transcript.create({
-                data: {
+            await prisma.transcript.upsert({
+                where: { meetingId },
+                update: {
+                    text: transcript,
+                    source: "BOT"
+                },
+                create: {
                     meetingId,
                     text: transcript,
                     source: "BOT"
@@ -135,8 +140,12 @@ export async function DELETE(req: NextRequest) {
             try {
                 const { generateMoM } = await import("@/lib/gemini");
                 const momData = await generateMoM(transcript, "Live Meeting Bot Capture");
-                await prisma.moM.create({
-                    data: {
+                await prisma.moM.upsert({
+                    where: { meetingId },
+                    update: {
+                        ...momData
+                    },
+                    create: {
                         meetingId,
                         ...momData
                     }
