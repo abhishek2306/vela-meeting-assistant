@@ -3,8 +3,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-// In-memory storage for active bot instances
-const activeBots: Record<string, any> = {};
+// In-memory storage for active bot instances with timestamps
+const activeBots: Record<string, { bot: any; startTime: number }> = {};
+const BOT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes timeout for stale bots
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -12,15 +13,23 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { meetingUrl, id } = await req.json();
+    const { meetingUrl, id, force } = await req.json();
 
     if (!meetingUrl) {
         return NextResponse.json({ error: "Meeting URL is required" }, { status: 400 });
     }
 
     // Check if a bot is already running for this meeting or user
-    if (activeBots[session.user.email]) {
-        return NextResponse.json({ error: "A bot is already active for this user." }, { status: 400 });
+    const existing = activeBots[session.user.email];
+    if (existing && !force) {
+        const isStale = Date.now() - existing.startTime > BOT_TIMEOUT_MS;
+        if (!isStale) {
+            return NextResponse.json({ 
+                error: "A bot is already active for this user.",
+                canForce: true 
+            }, { status: 400 });
+        }
+        console.log(`[API Bot] Clearing stale bot for ${session.user.email}`);
     }
 
     try {
@@ -31,12 +40,19 @@ export async function POST(req: NextRequest) {
             meetingId: id
         });
 
-        activeBots[session.user.email] = bot;
+        activeBots[session.user.email] = { bot, startTime: Date.now() };
         
         // Start the bot in the background
         bot.start().catch(err => {
             console.error("[API Bot] Background bot error:", err);
+            
+            // Cleanup on fatal launch error
             delete activeBots[session.user.email!];
+
+            // If it's a specific block, we might want to log it specifically
+            if (err.message === "ACCESS_DENIED_BY_GOOGLE") {
+                console.log("[API Bot] Bot was denied entry by Google or Host.");
+            }
         });
 
         return NextResponse.json({ success: true, message: "Bot joining meeting..." });
@@ -52,7 +68,7 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const bot = activeBots[session.user.email];
+    const { bot } = activeBots[session.user.email] || {};
     if (!bot) {
         return NextResponse.json({ error: "No active bot found" }, { status: 404 });
     }
@@ -134,10 +150,11 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const bot = activeBots[session.user.email];
+        const { bot, startTime } = activeBots[session.user.email] || {};
         return NextResponse.json({ 
             active: !!bot,
-            status: bot ? "Recording..." : "Idle"
+            status: bot ? bot.getStatus() : "Idle",
+            startTime: startTime || null
         });
     } catch (error: any) {
         console.error("[API Bot GET] Error:", error);

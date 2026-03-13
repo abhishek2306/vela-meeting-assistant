@@ -26,19 +26,50 @@ export function DashboardContent({ events, error }: DashboardContentProps) {
         setMounted(true);
     }, []);
 
-    const handleJoinBot = async (meetUrl: string, eventId: string) => {
+    // Status polling
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (activeBotId) {
+            interval = setInterval(async () => {
+                try {
+                    const res = await fetch("/api/meetings/bot");
+                    const data = await res.json();
+                    if (!data.active) {
+                        setActiveBotId(null);
+                        setBotStatus("");
+                    } else {
+                        setBotStatus(data.status || "Recording");
+                    }
+                } catch (e) {
+                    console.error("Polling error:", e);
+                }
+            }, 5000);
+        }
+        return () => clearInterval(interval);
+    }, [activeBotId]);
+
+    const handleJoinBot = async (meetUrl: string, eventId: string, force: boolean = false) => {
         try {
             setActiveBotId(eventId);
-            setBotStatus("Joining...");
+            setBotStatus(force ? "Force Joining..." : "Joining...");
             const res = await fetch("/api/meetings/bot", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ meetingUrl: meetUrl, id: eventId })
+                body: JSON.stringify({ meetingUrl: meetUrl, id: eventId, force })
             });
+
             if (res.ok) {
                 setBotStatus("Recording");
             } else {
                 const errData = await res.json().catch(() => ({}));
+                
+                if (errData.canForce && !force) {
+                    const confirmForce = window.confirm("A bot is already registered as active in your session. Would you like to clear the old session and force this new bot to join?");
+                    if (confirmForce) {
+                        return handleJoinBot(meetUrl, eventId, true);
+                    }
+                }
+                
                 setBotStatus(`Failed: ${errData.error || res.status}`);
                 setTimeout(() => { setActiveBotId(null); setBotStatus("") }, 5000);
             }
