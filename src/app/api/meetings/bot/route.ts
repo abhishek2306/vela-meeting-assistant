@@ -151,8 +151,10 @@ export async function GET(req: NextRequest) {
         }
 
         const { bot, startTime } = activeBots[session.user.email] || {};
+        const isActive = bot ? bot.getIsActive() : false;
+        
         return NextResponse.json({ 
-            active: !!bot,
+            active: isActive,
             status: bot ? bot.getStatus() : "Idle",
             startTime: startTime || null
         });

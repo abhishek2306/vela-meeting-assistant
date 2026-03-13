@@ -81,30 +81,16 @@ export class MeetingBot {
             ignoreDefaultArgs: ['--enable-automation'] 
         });
 
-        this.page = await this.browser.newPage();
-        
-        // Manual Stealth Injection (Webpack Safe bypass for puppeteer-extra-plugin-stealth)
-        await this.page.evaluateOnNewDocument(() => {
-            // Webdriver bypass
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            // Chrome object bypass
-            (window as any).chrome = { runtime: {} };
-            // Language bypass
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-            // Plugins bypass
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-            // Permissions bypass
-            const originalQuery = window.navigator.permissions.query;
-            (window.navigator.permissions as any).query = (parameters: any) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-        });
-        
-        // Use a more modern and realistic User Agent
+        // Get the default page or create one
+        const pages = await this.browser.pages();
+        this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
+
+        if (!this.page) throw new Error("Could not initialize browser page.");
+
+        // Set a more modern and realistic User Agent
         const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
         await this.page.setUserAgent(userAgent);
+
 
         // EXTRA STEALTH: Set Realistic Headers
         await this.page.setExtraHTTPHeaders({
@@ -114,29 +100,43 @@ export class MeetingBot {
         // Set Viewport to a common size
         await this.page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
 
+        // IMPORTANT: Set active BEFORE navigation so state sync works
+        this.isActive = true;
+        this.status = "Joining Lobby...";
+
         // Block mic/camera permissions properly
-        const context = this.browser.defaultBrowserContext();
-        await context.overridePermissions(this.config.meetingUrl, ['microphone', 'camera', 'notifications']);
+        const context = this.browser ? this.browser.defaultBrowserContext() : null;
+        if (context) {
+            await context.overridePermissions(this.config.meetingUrl, ['microphone', 'camera', 'notifications']);
+        }
 
         // Add a random delay to simulate human navigation
         await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
-        await this.page.goto(this.config.meetingUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        try {
+            await this.page.goto(this.config.meetingUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        } catch (err) {
+            console.error("[Bot] Navigation failed:", err);
+            this.status = "Navigation Failed";
+            await this.stop();
+            throw err;
+        }
         
         // Final check for immediate blocks
         const isBlocked = await this.page.evaluate(() => {
-            return document.body.innerText.includes("You can't join this video call") || 
-                   document.body.innerText.includes("automated queries") ||
-                   document.body.innerText.includes("Return to home screen");
+            const body = document.body?.innerText || "";
+            return body.includes("You can't join this video call") || 
+                   body.includes("automated queries") ||
+                   body.includes("Return to home screen");
         });
 
         if (isBlocked) {
             console.error("[Bot] ❌ Immediate Block Detected by Google Meet.");
-            this.isActive = false;
-            return;
+            this.status = "Access Denied";
+            await this.stop(); 
+            throw new Error("ACCESS_DENIED_BY_GOOGLE");
         }
 
-        this.status = "Joining Lobby...";
-        this.isActive = true;
         await this.prepareMeeting();
         this.status = "Recording";
         this.listenForCaptions();
@@ -222,13 +222,14 @@ export class MeetingBot {
             console.log("[Bot] Attempted to Enable Captions");
             this.status = "In Meeting";
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("[Bot] Error during preparation:", error);
-            // In case of timeout or failure, don't keep the bot "active" indefinitely
-            this.isActive = false;
-            if (this.status !== "Access Denied") { // Don't overwrite specific error status
+            if (error.message === "ACCESS_DENIED_BY_GOOGLE") {
+                this.status = "Access Denied";
+            } else {
                 this.status = "Preparation Failed";
             }
+            throw error; // Propagate to start()'s caller or catch block
         }
     }
 
@@ -292,7 +293,13 @@ export class MeetingBot {
         console.log("[Bot] Meeting ended. Transcript captured.");
         
         if (this.browser) {
-            await this.browser.close();
+            try {
+                await this.browser.close();
+            } catch (closeErr) {
+                console.error("[Bot] Error closing browser:", closeErr);
+            }
+            this.browser = null;
+            this.page = null;
         }
 
         // CLEANUP: Try to remove the session data directory
