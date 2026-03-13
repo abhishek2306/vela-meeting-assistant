@@ -1,11 +1,6 @@
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { Page, Browser } from 'puppeteer';
+import puppeteer, { Page, Browser } from 'puppeteer';
 import path from 'path';
 import fs from 'fs';
-
-// Force register plugin once
-let stealthInitialized = false;
 
 interface BotConfig {
     meetingUrl: string;
@@ -30,11 +25,6 @@ export class MeetingBot {
     async start() {
         this.status = "Launching Engine...";
         console.log(`[Bot] Starting for meeting: ${this.config.meetingUrl}`);
-        
-        if (!stealthInitialized) {
-            puppeteer.use(StealthPlugin());
-            stealthInitialized = true;
-        }
 
         const baseDataDir = path.join(process.cwd(), 'puppeteer_data');
         if (!fs.existsSync(baseDataDir)) fs.mkdirSync(baseDataDir);
@@ -86,6 +76,25 @@ export class MeetingBot {
         this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
 
         if (!this.page) throw new Error("Could not initialize browser page.");
+
+        // Manual Stealth Injection (Webpack Safe bypass for puppeteer-extra-plugin-stealth)
+        await this.page.evaluateOnNewDocument(() => {
+            // Webdriver bypass
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            // Chrome object bypass
+            (window as any).chrome = { runtime: {} };
+            // Language bypass
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            // Plugins bypass
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+            // Permissions bypass
+            const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+            (window.navigator.permissions as any).query = (parameters: any) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+        });
 
         // Set a more modern and realistic User Agent
         const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
