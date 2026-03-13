@@ -263,16 +263,35 @@ export class MeetingBot {
         // Usually it's in a container with class like 'VpW9d' 
         // We'll use a MutationObserver via evaluate
         await this.page.exposeFunction('onCaptionUpdate', (speaker: string, text: string) => {
-            if (!text) return;
+            if (!text || text.length < 2) return;
             
-            // Avoid duplicate appends from rapid mutations
-            const fullLine = speaker ? `${speaker}: ${text}` : text;
-            if (this.transcript.length > 0 && this.transcript[this.transcript.length - 1] === fullLine) return;
+            const lastLineIdx = this.transcript.length - 1;
+
+            if (speaker && speaker === this.lastSpeaker && lastLineIdx >= 0) {
+                const prevText = this.transcript[lastLineIdx];
+                if (prevText === text) return; // Exact match, skip
+
+                const normalize = (s: string) => s.toLowerCase().replace(/[^\\w]/g, '');
+                const normPrev = normalize(prevText);
+                const normText = normalize(text);
+
+                // If new text is an extension of the previous text, OVERWRITE it instead of appending
+                if (normText.startsWith(normPrev) && normPrev.length > 0) {
+                    this.transcript[lastLineIdx] = text;
+                    return;
+                }
+                
+                // If previous text already contains the new text (Meet UI glitch), ignore
+                if (normPrev.startsWith(normText) && normText.length > 0) {
+                    return;
+                }
+            }
 
             if (speaker && speaker !== this.lastSpeaker) {
                 this.transcript.push(`\n[${speaker}]`);
                 this.lastSpeaker = speaker;
             }
+            
             this.transcript.push(text);
             console.log(`[Bot Transcript] ${speaker}: ${text}`);
         });
