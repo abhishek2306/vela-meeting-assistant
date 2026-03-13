@@ -43,8 +43,30 @@ export class MeetingBot {
         this.currentProfileDir = path.join(baseDataDir, `session_${Date.now()}_${Math.random().toString(36).substring(7)}`);
         fs.mkdirSync(this.currentProfileDir);
 
+        // Try to find the real Chrome executable for better reliability on Windows
+        const chromePaths = [
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+            process.env.CHROME_PATH || '',
+        ];
+
+        let executablePath: string | undefined;
+        for (const p of chromePaths) {
+            if (p && fs.existsSync(p)) {
+                executablePath = p;
+                break;
+            }
+        }
+
+        if (executablePath) {
+            console.log(`[Bot] 🚀 Using real Chrome executable: ${executablePath}`);
+        } else {
+            console.log(`[Bot] ⚠️ Real Chrome not found, relying on Puppeteer default.`);
+        }
+
         this.browser = await puppeteer.launch({
             headless: false, 
+            ...(executablePath ? { executablePath } : {}),
             args: [
                 '--use-fake-ui-for-media-stream',
                 '--use-fake-device-for-media-stream',
@@ -53,7 +75,7 @@ export class MeetingBot {
                 '--disable-setuid-sandbox',
                 '--disable-blink-features=AutomationControlled',
                 '--window-size=1280,720',
-                '--incognito' // Try incognito to bypass certain cookie-based blocks
+                '--start-maximized'
             ],
             userDataDir: this.currentProfileDir,
             ignoreDefaultArgs: ['--enable-automation'] 
