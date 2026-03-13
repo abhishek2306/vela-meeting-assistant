@@ -26,27 +26,43 @@ export class MeetingBot {
         if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir);
 
         this.browser = await puppeteer.launch({
-            headless: false, // Start with false for debugging/initial login
+            headless: false, 
             args: [
                 '--use-fake-ui-for-media-stream',
+                '--use-fake-device-for-media-stream',
                 '--disable-notifications',
                 '--no-sandbox',
-                '--disable-setuid-sandbox'
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--window-size=1280,720'
             ],
-            userDataDir
+            userDataDir,
+            ignoreDefaultArgs: ['--enable-automation'] // Further stealth
         });
 
         this.page = await this.browser.newPage();
         
         // Manual Stealth Injection (Webpack Safe bypass for puppeteer-extra-plugin-stealth)
         await this.page.evaluateOnNewDocument(() => {
+            // Webdriver bypass
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            // Chrome object bypass
+            (window as any).chrome = { runtime: {} };
+            // Language bypass
             Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            // Plugins bypass
             Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+            // Permissions bypass
+            const originalQuery = window.navigator.permissions.query;
+            (window.navigator.permissions as any).query = (parameters: any) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
         });
         
-        // Override user agent to look like a standard Chrome browser
-        await this.page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        // Use a more modern and realistic User Agent
+        await this.page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
 
         // Block mic/camera permissions properly
         const context = this.browser.defaultBrowserContext();
@@ -63,12 +79,25 @@ export class MeetingBot {
         if (!this.page) return;
 
         try {
+            // 0. Check for "You can't join" error page immediately
+            const blockPageText = await this.page.evaluate(() => {
+                return document.body.innerText.includes("You can't join this video call") || 
+                       document.body.innerText.includes("You can't join this call");
+            });
+
+            if (blockPageText) {
+                console.error("[Bot] Access Denied: Google blocked the bot or the meeting is restricted.");
+                return;
+            }
+
             // 1. Mute Mic and Camera immediately
-            // Google Meet buttons usually have specific aria-labels
             const micButton = 'div[aria-label*="microphone"][role="button"]';
             const camButton = 'div[aria-label*="camera"][role="button"]';
             
-            await this.page.waitForSelector(micButton, { timeout: 10000 });
+            // Wait for either the mic button OR a possible error/login message
+            await this.page.waitForSelector(micButton, { timeout: 15000 }).catch(() => {
+                console.log("[Bot] Mic button not found within 15s. Checking for login/blocked screens...");
+            });
             
             // Check if they are already off or on. Usually "Turn off microphone" vs "Turn on microphone"
             const micStatus = await this.page.$eval(micButton, el => el.getAttribute('aria-label'));
@@ -82,14 +111,21 @@ export class MeetingBot {
             }
 
             // 2. Join the meeting
+            // Sometimes guest joining requires a name
+            const nameInput = 'input[aria-label="Your name"], input[placeholder="Your name"]';
+            const existsNameInput = await this.page.$(nameInput);
+            if (existsNameInput) {
+                await this.page.type(nameInput, "Vela Assistant (Bot)");
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
             // Could be "Join now" or "Ask to join"
-            const joinButton = 'span:contains("Join now"), span:contains("Ask to join")';
-            // Since :contains is not standard CSS, manually find
             await this.page.evaluate(() => {
                 const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
                 const joinBtn = buttons.find(b => 
                     b.textContent?.includes('Join now') || 
-                    b.textContent?.includes('Ask to join')
+                    b.textContent?.includes('Ask to join') ||
+                    b.textContent?.includes('Join anyway')
                 ) as HTMLElement;
                 if (joinBtn) joinBtn.click();
             });
